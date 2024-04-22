@@ -125,6 +125,14 @@ func main() {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
+	// 注册Reconciler
+	if err = (&controller.GatewayExIpReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "GatewayExIp")
+		os.Exit(1)
+	}
 	// BrokerSyncerConfig的配置信息
 	config := mgr.GetConfig()
 	restMapper, err := util.BuildRestMapper(config)
@@ -137,11 +145,6 @@ func main() {
 		klog.Info(err)
 		os.Exit(1)
 	}
-	// 这个lighthouse里面好像是从环境变量中获取的
-	spec := controller.AgentSpecification{
-		ClusterID:      "1",
-		LocalNamespace: "1",
-	}
 	brokerSyncerConfig := broker.SyncerConfig{
 		LocalRestConfig: config,
 		LocalClient:     localClient,
@@ -149,7 +152,7 @@ func main() {
 		Scheme:          scheme,
 	}
 	// 注册 GatewayExIpController
-	if err := mgr.Add(controller.NewGatewayIpController(spec, brokerSyncerConfig)); err != nil {
+	if err := mgr.Add(controller.NewGatewayIpController(brokerSyncerConfig)); err != nil {
 		setupLog.Error(err, "unable to set up gateway informer")
 		os.Exit(1)
 	}
