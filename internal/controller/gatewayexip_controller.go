@@ -18,13 +18,18 @@ package controller
 
 import (
 	"context"
+	"os"
+	"strconv"
 
+	kubeovnv1 "kubeovn-multivpc/api/v1"
+
+	"github.com/submariner-io/admiral/pkg/syncer/broker"
+	submarinerv1alpha1 "github.com/submariner-io/submariner-operator/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-
-	kubeovnv1 "kubeovn-multivpc/api/v1"
 )
 
 // GatewayExIpReconciler reconciles a GatewayExIp object
@@ -36,6 +41,7 @@ type GatewayExIpReconciler struct {
 //+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips/finalizers,verbs=update
+//+kubebuilder:rbac:groups=submariner.io,resources=servicediscoveries,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -60,7 +66,7 @@ func (r *GatewayExIpReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if !gatewayExIp.ObjectMeta.DeletionTimestamp.IsZero() {
 		return ctrl.Result{}, nil
 	}
-
+	r.initEnvVars()
 	gatewayExIp.Status.ExternalIP = gatewayExIp.Spec.ExternalIP
 
 	// Update the GatewayExIp instance
@@ -79,4 +85,25 @@ func (r *GatewayExIpReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&kubeovnv1.GatewayExIp{}).
 		Complete(r)
+}
+
+// 设置环境变量，从ServiceDiscovery对象
+func (r *GatewayExIpReconciler) initEnvVars() {
+	cr := &submarinerv1alpha1.ServiceDiscovery{}
+	err := r.Get(context.TODO(), types.NamespacedName{Namespace: "submariner-operator"}, cr)
+	if err != nil {
+		os.Exit(1)
+	}
+
+	os.Setenv("SUBMARINER_NAMESPACE", cr.Spec.Namespace)
+	os.Setenv("SUBMARINER_CLUSTERID", cr.Spec.ClusterID)
+	os.Setenv("SUBMARINER_DEBUG", strconv.FormatBool(cr.Spec.Debug))
+	os.Setenv("SUBMARINER_GLOBALNET_ENABLED", strconv.FormatBool(cr.Spec.GlobalnetEnabled))
+	os.Setenv("SUBMARINER_HALT_ON_CERT_ERROR", strconv.FormatBool(cr.Spec.HaltOnCertificateError))
+	os.Setenv(broker.EnvironmentVariable("ApiServer"), cr.Spec.BrokerK8sApiServer)
+	os.Setenv(broker.EnvironmentVariable("ApiServerToken"), cr.Spec.BrokerK8sApiServerToken)
+	os.Setenv(broker.EnvironmentVariable("RemoteNamespace"), cr.Spec.BrokerK8sRemoteNamespace)
+	os.Setenv(broker.EnvironmentVariable("CA"), cr.Spec.BrokerK8sCA)
+	os.Setenv(broker.EnvironmentVariable("Insecure"), strconv.FormatBool(cr.Spec.BrokerK8sInsecure))
+	os.Setenv(broker.EnvironmentVariable("Secret"), cr.Spec.BrokerK8sSecret)
 }
