@@ -18,65 +18,161 @@ package controller
 
 import (
 	"context"
-
+	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/submariner-io/admiral/pkg/federate"
+	"github.com/submariner-io/admiral/pkg/syncer"
+	"github.com/submariner-io/admiral/pkg/syncer/broker"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
-
+	"k8s.io/client-go/dynamic"
 	kubeovnv1 "kubeovn-multivpc/api/v1"
+	"time"
 )
-
-// GatewayExIpReconciler reconciles a GatewayExIp object
-type GatewayExIpReconciler struct {
-	client.Client
-	Scheme *runtime.Scheme
-}
 
 //+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips/finalizers,verbs=update
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the GatewayExIp object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.17.0/pkg/reconcile
-func (r *GatewayExIpReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
-
-	// TODO(user): your logic here
-	// Fetch the GatewayExIp instance
-	var gatewayExIp kubeovnv1.GatewayExIp
-	if err := r.Get(ctx, req.NamespacedName, &gatewayExIp); err != nil {
-		log.Log.Error(err, "unable to fetch GatewayExIp")
-		return ctrl.Result{}, client.IgnoreNotFound(err)
-	}
-
-	if !gatewayExIp.ObjectMeta.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, nil
-	}
-
-	gatewayExIp.Status.ExternalIP = gatewayExIp.Spec.ExternalIP
-
-	// Update the GatewayExIp instance
-	if err := r.Update(ctx, &gatewayExIp); err != nil {
-		log.Log.Error(err, "unable to update GatewayExIp")
-		return ctrl.Result{}, err
-	}
-
-	log.Log.Info("Updated GatewayExIp successfully", "ExternalIP", gatewayExIp.Status.ExternalIP)
-
-	return ctrl.Result{}, nil
+type GatewayExIpController struct {
+	localClient    dynamic.Interface
+	restMapper     meta.RESTMapper
+	localSyncer    syncer.Interface
+	remoteSyncer   syncer.Interface
+	clusterID      string
+	localNamespace string
 }
 
-// SetupWithManager sets up the controller with the Manager.
-func (r *GatewayExIpReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&kubeovnv1.GatewayExIp{}).
-		Complete(r)
+type AgentSpecification struct {
+	ClusterID      string
+	LocalNamespace string
+}
+
+var BrokerResyncPeriod = time.Minute * 2
+
+func NewGatewayIpController(spec AgentSpecification, syncerConfig broker.SyncerConfig) *GatewayExIpController {
+	controller := &GatewayExIpController{
+		localClient:    syncerConfig.LocalClient,
+		restMapper:     syncerConfig.RestMapper,
+		clusterID:      spec.ClusterID,
+		localNamespace: spec.LocalNamespace,
+	}
+	// 创建 Broker Syncer用于之后创建localSyncer
+	brokerSyncerConfig := syncerConfig
+	brokerSyncerConfig.LocalNamespace = metav1.NamespaceAll
+	brokerSyncerConfig.LocalClusterID = spec.ClusterID
+	brokerSyncerConfig.ResourceConfigs = []broker.ResourceConfig{
+		{
+			LocalSourceNamespace:   metav1.NamespaceAll,
+			LocalResourceType:      &kubeovnv1.GatewayExIp{},
+			TransformLocalToBroker: controller.onLocal,
+			OnSuccessfulSyncToBroker: func(obj runtime.Object, op syncer.Operation) bool {
+				// 逻辑代码
+				return false
+			},
+			BrokerResourceType:     &kubeovnv1.GatewayExIp{},
+			TransformBrokerToLocal: controller.onRemote,
+			OnSuccessfulSyncFromBroker: func(obj runtime.Object, op syncer.Operation) bool {
+				// 逻辑代码
+				return false
+			},
+			BrokerResyncPeriod: BrokerResyncPeriod,
+		},
+	}
+	var err error
+	// 创建brokerSyncer
+	brokerSyncer, err := broker.NewSyncer(syncerConfig)
+	if err != nil {
+		return nil
+	}
+	// 创建localSyncer
+	controller.localSyncer, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
+		Name:            "Local GatewayExIp",
+		SourceClient:    syncerConfig.LocalClient,
+		SourceNamespace: controller.localNamespace,
+		Direction:       syncer.LocalToRemote,
+		RestMapper:      syncerConfig.RestMapper,
+		Federator:       controller,
+		ResourceType:    &kubeovnv1.GatewayExIp{},
+		Transform:       controller.onLocal,
+		Scheme:          syncerConfig.Scheme,
+		SyncCounterOpts: &prometheus.GaugeOpts{
+			// 自定义
+			//Name: syncerMetricNames.ServiceExportCounterName,
+			//Help: "Count of exported services",
+		},
+	})
+	if err != nil {
+		return nil
+	}
+	//创建remoteSyncer
+	controller.remoteSyncer, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
+		Name:             "Remote GatewayExIp",
+		SourceClient:     brokerSyncer.GetBrokerClient(),
+		SourceNamespace:  brokerSyncer.GetBrokerNamespace(),
+		RestMapper:       syncerConfig.RestMapper,
+		Federator:        federate.NewCreateOrUpdateFederator(syncerConfig.LocalClient, syncerConfig.RestMapper, corev1.NamespaceAll, ""),
+		ResourceType:     &kubeovnv1.GatewayExIp{},
+		Transform:        controller.onRemote,
+		OnSuccessfulSync: controller.onSuccessfulSyncFromBroker,
+		Scheme:           syncerConfig.Scheme,
+		ResyncPeriod:     BrokerResyncPeriod,
+		SyncCounterOpts:  &prometheus.GaugeOpts{
+			// 自定义
+			//Name: syncerMetricNames.ServiceImportCounterName,
+			//Help: "Count of imported services",
+		},
+	})
+	if err != nil {
+		return nil
+	}
+	return controller
+}
+
+func (g *GatewayExIpController) Start(ctx context.Context) error {
+	// 创建一个带有 context 的停止通道
+	stopCh := ctx.Done()
+
+	if err := g.localSyncer.Start(stopCh); err != nil {
+		return errors.Wrap(err, "error starting local ServiceImport syncer")
+	}
+
+	if err := g.remoteSyncer.Start(stopCh); err != nil {
+		return errors.Wrap(err, "error starting remote ServiceImport syncer")
+	}
+
+	g.reconcileLocal()
+	g.reconcileRemote()
+
+	return nil
+}
+
+func (g *GatewayExIpController) reconcileLocal() {
+
+}
+
+func (g *GatewayExIpController) reconcileRemote() {
+
+}
+
+func (g *GatewayExIpController) onLocal(obj runtime.Object, _ int, _ syncer.Operation) (runtime.Object, bool) {
+
+}
+
+func (g *GatewayExIpController) onRemote(obj runtime.Object, _ int, _ syncer.Operation) (runtime.Object, bool) {
+
+}
+
+func (g *GatewayExIpController) onSuccessfulSyncFromBroker(obj runtime.Object, op syncer.Operation) bool {
+
+}
+
+func (g *GatewayExIpController) Distribute(ctx context.Context, obj runtime.Object) error {
+
+}
+
+func (g *GatewayExIpController) Delete(ctx context.Context, obj runtime.Object) error {
+
 }

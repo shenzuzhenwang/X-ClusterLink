@@ -19,6 +19,11 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+	"github.com/submariner-io/admiral/pkg/syncer/broker"
+	"github.com/submariner-io/admiral/pkg/util"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/klog/v2"
+	"kubeovn-multivpc/internal/controller"
 	"os"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -35,7 +40,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	kubeovnv1 "kubeovn-multivpc/api/v1"
-	"kubeovn-multivpc/internal/controller"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -121,16 +125,35 @@ func main() {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
-
-	if err = (&controller.GatewayExIpReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "GatewayExIp")
+	// BrokerSyncerConfig的配置信息
+	config := mgr.GetConfig()
+	restMapper, err := util.BuildRestMapper(config)
+	if err != nil {
+		klog.Info(err)
+		os.Exit(1)
+	}
+	localClient, err := dynamic.NewForConfig(config)
+	if err != nil {
+		klog.Info(err)
+		os.Exit(1)
+	}
+	// 这个lighthouse里面好像是从环境变量中获取的
+	spec := controller.AgentSpecification{
+		ClusterID:      "1",
+		LocalNamespace: "1",
+	}
+	brokerSyncerConfig := broker.SyncerConfig{
+		LocalRestConfig: config,
+		LocalClient:     localClient,
+		RestMapper:      restMapper,
+		Scheme:          scheme,
+	}
+	// 注册 GatewayExIpController
+	if err := mgr.Add(controller.NewGatewayIpController(spec, brokerSyncerConfig)); err != nil {
+		setupLog.Error(err, "unable to set up gateway informer")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
-
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)
