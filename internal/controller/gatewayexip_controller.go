@@ -30,7 +30,8 @@ import (
 	submarinerv1alpha1 "github.com/submariner-io/submariner-operator/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -70,8 +71,6 @@ func (r *GatewayExIpReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if !gatewayExIp.ObjectMeta.DeletionTimestamp.IsZero() {
 		return ctrl.Result{}, nil
 	}
-	r.initEnvVars()
-	gatewayExIp.Status.ExternalIP = gatewayExIp.Spec.ExternalIP
 
 	// Update the GatewayExIp instance
 	if err := r.Update(ctx, &gatewayExIp); err != nil {
@@ -79,7 +78,7 @@ func (r *GatewayExIpReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	log.Log.Info("Updated GatewayExIp successfully", "ExternalIP", gatewayExIp.Status.ExternalIP)
+	log.Log.Info("Updated GatewayExIp successfully", "ExternalIP", gatewayExIp.Spec.ExternalIP)
 
 	return ctrl.Result{}, nil
 }
@@ -92,12 +91,23 @@ func (r *GatewayExIpReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 // 设置环境变量，从ServiceDiscovery对象
-func (r *GatewayExIpReconciler) initEnvVars() {
+func initEnvVars(syncerConf broker.SyncerConfig) error {
+	// if err := r.Get(context.TODO(), types.NamespacedName{Namespace: "submariner-operator"}, cr); err != nil {
+	// 	log.Log.Error(err, "problem init envvar")
+	// 	os.Exit(1)
+	// }
+
 	cr := &submarinerv1alpha1.ServiceDiscovery{}
-	if err := r.Get(context.TODO(), types.NamespacedName{Namespace: "submariner-operator"}, cr); err != nil {
-		log.Log.Error(err, "problem init envvar")
-		os.Exit(1)
+	obj, err := syncerConf.LocalClient.Resource(schema.GroupVersionResource{
+		Group:    "submariner.io",
+		Version:  "v1alpha1",
+		Resource: "servicediscoveries",
+	}).Namespace("submariner-operator").Get(context.TODO(), "service-discovery", metav1.GetOptions{})
+	if err != nil {
+		return err
 	}
+
+	utilruntime.Must(syncerConf.Scheme.Convert(obj, cr, nil))
 
 	os.Setenv("SUBMARINER_NAMESPACE", cr.Spec.Namespace)
 	os.Setenv("SUBMARINER_CLUSTERID", cr.Spec.ClusterID)
@@ -110,6 +120,8 @@ func (r *GatewayExIpReconciler) initEnvVars() {
 	os.Setenv(broker.EnvironmentVariable("CA"), cr.Spec.BrokerK8sCA)
 	os.Setenv(broker.EnvironmentVariable("Insecure"), strconv.FormatBool(cr.Spec.BrokerK8sInsecure))
 	os.Setenv(broker.EnvironmentVariable("Secret"), cr.Spec.BrokerK8sSecret)
+
+	return nil
 }
 
 type AgentSpecification struct {
@@ -139,6 +151,12 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) (*Controlle
 		// serviceSyncer:          serviceSyncer,
 		// conflictCheckWorkQueue: workqueue.New("ConflictChecker"),
 	}
+
+	err := initEnvVars(syncerConfig)
+	if err != nil {
+		return nil, errors.Wrap(err, "error init environment vars")
+	}
+
 	syncerConfig.LocalNamespace = metav1.NamespaceAll
 	syncerConfig.LocalClusterID = spec.ClusterID
 	syncerConfig.ResourceConfigs = []broker.ResourceConfig{
@@ -157,7 +175,6 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) (*Controlle
 		},
 	}
 
-	var err error
 	// broker 接口，对于syncerConfig.ResourceConfigs中的所有资源进行双向同步
 	c.syncer, err = broker.NewSyncer(syncerConfig)
 	if err != nil {

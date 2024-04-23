@@ -36,7 +36,6 @@ type GatewayExIpSpec struct {
 type GatewayExIpStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-	ExternalIP string `json:"externalip,omitempty"`
 }
 
 //+kubebuilder:object:root=true
