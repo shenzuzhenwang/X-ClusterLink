@@ -17,20 +17,17 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	kubeovnv1 "kubeovn-multivpc/api/v1"
 	"os"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"strconv"
 	"time"
 )
 
 type GatewayExIpController struct {
-	client.Client
 	scheme         *runtime.Scheme
 	localClient    dynamic.Interface
 	restMapper     meta.RESTMapper
@@ -58,10 +55,20 @@ func NewGatewayIpController(syncerConfig broker.SyncerConfig) *GatewayExIpContro
 	}
 	// 初始化环境变量
 	cr := &submarinerv1alpha1.ServiceDiscovery{}
-	err := controller.Get(context.TODO(), types.NamespacedName{Namespace: "submariner-operator"}, cr)
+	gvk := schema.GroupVersionKind{
+		Group:   "submariner.io",
+		Version: "v1alpha1",
+		Kind:    "ServiceDiscovery",
+	}
+	obj, err := controller.localClient.Resource(schema.GroupVersionResource{
+		Group:    gvk.Group,
+		Version:  gvk.Version,
+		Resource: "servicediscoveries",
+	}).Namespace("submariner-operator").Get(context.TODO(), "service-discovery", metav1.GetOptions{})
 	if err != nil {
 		return nil
 	}
+	utilruntime.Must(controller.scheme.Convert(obj, cr, nil))
 	os.Setenv("SUBMARINER_NAMESPACE", cr.Spec.Namespace)
 	os.Setenv("SUBMARINER_CLUSTERID", cr.Spec.ClusterID)
 	os.Setenv("SUBMARINER_DEBUG", strconv.FormatBool(cr.Spec.Debug))
