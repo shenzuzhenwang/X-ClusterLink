@@ -20,11 +20,15 @@ import (
 	"context"
 	"os"
 	"strconv"
+	"time"
 
 	kubeovnv1 "kubeovn-multivpc/api/v1"
 
+	"github.com/pkg/errors"
+	"github.com/submariner-io/admiral/pkg/syncer"
 	"github.com/submariner-io/admiral/pkg/syncer/broker"
 	submarinerv1alpha1 "github.com/submariner-io/submariner-operator/api/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -90,8 +94,8 @@ func (r *GatewayExIpReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // 设置环境变量，从ServiceDiscovery对象
 func (r *GatewayExIpReconciler) initEnvVars() {
 	cr := &submarinerv1alpha1.ServiceDiscovery{}
-	err := r.Get(context.TODO(), types.NamespacedName{Namespace: "submariner-operator"}, cr)
-	if err != nil {
+	if err := r.Get(context.TODO(), types.NamespacedName{Namespace: "submariner-operator"}, cr); err != nil {
+		log.Log.Error(err, "problem init envvar")
 		os.Exit(1)
 	}
 
@@ -106,4 +110,93 @@ func (r *GatewayExIpReconciler) initEnvVars() {
 	os.Setenv(broker.EnvironmentVariable("CA"), cr.Spec.BrokerK8sCA)
 	os.Setenv(broker.EnvironmentVariable("Insecure"), strconv.FormatBool(cr.Spec.BrokerK8sInsecure))
 	os.Setenv(broker.EnvironmentVariable("Secret"), cr.Spec.BrokerK8sSecret)
+}
+
+type AgentSpecification struct {
+	ClusterID        string
+	Namespace        string
+	Verbosity        int
+	GlobalnetEnabled bool `split_words:"true"`
+	Uninstall        bool
+	HaltOnCertError  bool `split_words:"true"`
+	Debug            bool
+}
+type Controller struct {
+	clusterID string
+	syncer    *broker.Syncer
+	// serviceImportAggregator *ServiceImportAggregator
+	// serviceExportClient     *ServiceExportClient
+	// serviceSyncer syncer.Interface
+	// conflictCheckWorkQueue workqueue.Interface
+}
+
+var BrokerResyncPeriod = time.Minute * 2
+
+func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) (*Controller, error) {
+	c := &Controller{
+		clusterID: spec.ClusterID,
+		// serviceExportClient:    serviceExportClient,
+		// serviceSyncer:          serviceSyncer,
+		// conflictCheckWorkQueue: workqueue.New("ConflictChecker"),
+	}
+	syncerConfig.LocalNamespace = metav1.NamespaceAll
+	syncerConfig.LocalClusterID = spec.ClusterID
+	syncerConfig.ResourceConfigs = []broker.ResourceConfig{
+		{
+			LocalSourceNamespace: metav1.NamespaceAll,
+			// LocalSourceLabelSelector: k8slabels.SelectorFromSet(map[string]string{
+			// 	discovery.LabelManagedBy: constants.LabelValueManagedBy,
+			// }).String(),
+			LocalResourceType:          &kubeovnv1.GatewayExIp{},
+			TransformLocalToBroker:     c.onLocalGatewayExIp,
+			OnSuccessfulSyncToBroker:   c.onLocalGatewayExIpSynced,
+			BrokerResourceType:         &kubeovnv1.GatewayExIp{},
+			TransformBrokerToLocal:     c.onRemoteGatewayExIp,
+			OnSuccessfulSyncFromBroker: c.onRemoteGatewayExIpSynced,
+			BrokerResyncPeriod:         BrokerResyncPeriod,
+		},
+	}
+
+	var err error
+	// broker 接口，对于syncerConfig.ResourceConfigs中的所有资源进行双向同步
+	c.syncer, err = broker.NewSyncer(syncerConfig)
+	if err != nil {
+		return nil, errors.Wrap(err, "error creating GatewayExIp syncer")
+	}
+
+	// c.serviceImportAggregator = newServiceImportAggregator(c.syncer.GetBrokerClient(), c.syncer.GetBrokerNamespace(),
+	// 	spec.ClusterID, syncerConfig.Scheme)
+
+	return c, nil
+}
+
+func (c *Controller) Start(stopCh <-chan struct{}) error {
+	if err := c.syncer.Start(stopCh); err != nil {
+		return errors.Wrap(err, "error starting syncer")
+	}
+	// c.conflictCheckWorkQueue.Run(stopCh, c.checkForConflicts)
+
+	// go func() {
+	// 	<-stopCh
+	// 	c.conflictCheckWorkQueue.ShutDown()
+	// }()
+	log.Log.Info("Agent controller started")
+
+	return nil
+}
+
+func (c *Controller) onLocalGatewayExIp(obj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
+	return obj, false
+}
+
+func (c *Controller) onLocalGatewayExIpSynced(obj runtime.Object, op syncer.Operation) bool {
+	return false
+	// return err != nil
+}
+func (c *Controller) onRemoteGatewayExIp(obj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
+	return obj, false
+}
+func (c *Controller) onRemoteGatewayExIpSynced(obj runtime.Object, op syncer.Operation) bool {
+	return false
+	// return err != nil
 }

@@ -26,7 +26,6 @@ import (
 	"os"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"strconv"
-	"time"
 )
 
 type GatewayExIpController struct {
@@ -42,8 +41,7 @@ type GatewayExIpController struct {
 }
 
 var (
-	BrokerResyncPeriod = time.Minute * 2
-	GateewayExIpGVR    = schema.GroupVersionResource{
+	GateewayExIpGVR = schema.GroupVersionResource{
 		Group:    kubeovnv1.GroupVersion.Group,
 		Version:  kubeovnv1.GroupVersion.Version,
 		Resource: "gatewayexips",

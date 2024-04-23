@@ -19,12 +19,15 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+	"github.com/kelseyhightower/envconfig"
+	"github.com/submariner-io/admiral/pkg/log"
 	"github.com/submariner-io/admiral/pkg/syncer/broker"
 	"github.com/submariner-io/admiral/pkg/util"
 	"k8s.io/client-go/dynamic"
-	"k8s.io/klog/v2"
+	"k8s.io/client-go/tools/clientcmd"
 	"kubeovn-multivpc/internal/controller"
 	"os"
+	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -97,6 +100,55 @@ func main() {
 	webhookServer := webhook.NewServer(webhook.Options{
 		TLSOpts: tlsOpts,
 	})
+	/************/
+
+	agentSpec := controller.AgentSpecification{
+		Verbosity: log.DEBUG,
+	}
+	if err := envconfig.Process("submariner", &agentSpec); err != nil {
+		setupLog.Error(err, "Error processing env config for agent spec")
+		os.Exit(1)
+	}
+	// 创建config   **********
+	cfg, err := clientcmd.BuildConfigFromFlags("", "")
+	if err != nil {
+		setupLog.Error(err, "Error building kubeconfig")
+		os.Exit(1)
+	}
+
+	restMapper, err := util.BuildRestMapper(cfg)
+	if err != nil {
+		setupLog.Error(err, "Error building rest mapper")
+		os.Exit(1)
+	}
+
+	localClient, err := dynamic.NewForConfig(cfg)
+	if err != nil {
+		setupLog.Error(err, "Error creating dynamic client")
+		os.Exit(1)
+	}
+
+	// set up signals so we handle the first shutdown signal gracefully
+	ctx := signals.SetupSignalHandler()
+
+	gwExIpAgent, err := controller.New(&agentSpec, broker.SyncerConfig{
+		LocalRestConfig: cfg,
+		LocalClient:     localClient,
+		RestMapper:      restMapper,
+		Scheme:          clientgoscheme.Scheme,
+	})
+	if err != nil {
+		setupLog.Error(err, "Error creating gwExIp agent")
+		os.Exit(1)
+	}
+
+	err = gwExIpAgent.Start(ctx.Done())
+	if err != nil {
+		setupLog.Error(err, "Error start gwExIp agent")
+		os.Exit(1)
+	}
+
+	/*****************/
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
@@ -131,29 +183,6 @@ func main() {
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "GatewayExIp")
-		os.Exit(1)
-	}
-	// BrokerSyncerConfig的配置信息
-	config := mgr.GetConfig()
-	restMapper, err := util.BuildRestMapper(config)
-	if err != nil {
-		klog.Info(err)
-		os.Exit(1)
-	}
-	localClient, err := dynamic.NewForConfig(config)
-	if err != nil {
-		klog.Info(err)
-		os.Exit(1)
-	}
-	brokerSyncerConfig := broker.SyncerConfig{
-		LocalRestConfig: config,
-		LocalClient:     localClient,
-		RestMapper:      restMapper,
-		Scheme:          scheme,
-	}
-	// 注册 GatewayExIpController
-	if err := mgr.Add(controller.NewGatewayIpController(brokerSyncerConfig)); err != nil {
-		setupLog.Error(err, "unable to set up gateway informer")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
