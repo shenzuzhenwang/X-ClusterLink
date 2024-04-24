@@ -18,6 +18,11 @@ package controller
 
 import (
 	"context"
+	kubeovnv1 "kubeovn-multivpc/api/v1"
+	"os"
+	"strconv"
+	"time"
+
 	"github.com/pkg/errors"
 	"github.com/submariner-io/admiral/pkg/syncer"
 	"github.com/submariner-io/admiral/pkg/syncer/broker"
@@ -27,18 +32,68 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/client-go/dynamic"
-	"k8s.io/klog/v2"
-	kubeovnv1 "kubeovn-multivpc/api/v1"
-	"os"
-	"strconv"
-	"time"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 //+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips/finalizers,verbs=update
 //+kubebuilder:rbac:groups=submariner.io,resources=servicediscoveries,verbs=get;list;watch;create;update;patch;delete
+
+// GatewayExIpReconciler reconciles a GatewayExIp object
+type GatewayExIpReconciler struct {
+	client.Client
+	Scheme *runtime.Scheme
+}
+
+//+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips/finalizers,verbs=update
+//+kubebuilder:rbac:groups=submariner.io,resources=servicediscoveries,verbs=get;list;watch;create;update;patch;delete
+
+// Reconcile is part of the main kubernetes reconciliation loop which aims to
+// move the current state of the cluster closer to the desired state.
+// TODO(user): Modify the Reconcile function to compare the state specified by
+// the GatewayExIp object against the actual cluster state, and then
+// perform operations to make the cluster state reflect the state specified by
+// the user.
+//
+// For more details, check Reconcile and its Result here:
+// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.17.0/pkg/reconcile
+func (r *GatewayExIpReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	_ = log.FromContext(ctx)
+
+	// TODO(user): your logic here
+	// Fetch the GatewayExIp instance
+	var gatewayExIp kubeovnv1.GatewayExIp
+	if err := r.Get(ctx, req.NamespacedName, &gatewayExIp); err != nil {
+		log.Log.Error(err, "unable to fetch GatewayExIp")
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	if !gatewayExIp.ObjectMeta.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, nil
+	}
+
+	// Update the GatewayExIp instance
+	if err := r.Update(ctx, &gatewayExIp); err != nil {
+		log.Log.Error(err, "unable to update GatewayExIp")
+		return ctrl.Result{}, err
+	}
+
+	log.Log.Info("Updated GatewayExIp successfully", "ExternalIP", gatewayExIp.Spec.ExternalIP)
+
+	return ctrl.Result{}, nil
+}
+
+// SetupWithManager sets up the controller with the Manager.
+func (r *GatewayExIpReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&kubeovnv1.GatewayExIp{}).
+		Complete(r)
+}
 
 type AgentSpecification struct {
 	ClusterID        string
@@ -58,18 +113,24 @@ type Controller struct {
 }
 
 // 设置环境变量，从ServiceDiscovery对象
-func InitEnvVars(c dynamic.Interface, scheme *runtime.Scheme) error {
+func InitEnvVars(syncerConf broker.SyncerConfig) error {
+	// if err := r.Get(context.TODO(), types.NamespacedName{Namespace: "submariner-operator"}, cr); err != nil {
+	// 	log.Log.Error(err, "problem init envvar")
+	// 	os.Exit(1)
+	// }
+
 	cr := &submarinerv1alpha1.ServiceDiscovery{}
-	obj, err := c.Resource(schema.GroupVersionResource{
+	obj, err := syncerConf.LocalClient.Resource(schema.GroupVersionResource{
 		Group:    "submariner.io",
 		Version:  "v1alpha1",
 		Resource: "servicediscoveries",
 	}).Namespace("submariner-operator").Get(context.TODO(), "service-discovery", metav1.GetOptions{})
 	if err != nil {
-		klog.Info(err, "problem init envvar")
 		return err
 	}
-	utilruntime.Must(scheme.Convert(obj, cr, nil))
+
+	utilruntime.Must(syncerConf.Scheme.Convert(obj, cr, nil))
+
 	os.Setenv("SUBMARINER_NAMESPACE", cr.Spec.Namespace)
 	os.Setenv("SUBMARINER_CLUSTERID", cr.Spec.ClusterID)
 	os.Setenv("SUBMARINER_DEBUG", strconv.FormatBool(cr.Spec.Debug))
@@ -81,17 +142,24 @@ func InitEnvVars(c dynamic.Interface, scheme *runtime.Scheme) error {
 	os.Setenv(broker.EnvironmentVariable("CA"), cr.Spec.BrokerK8sCA)
 	os.Setenv(broker.EnvironmentVariable("Insecure"), strconv.FormatBool(cr.Spec.BrokerK8sInsecure))
 	os.Setenv(broker.EnvironmentVariable("Secret"), cr.Spec.BrokerK8sSecret)
+
 	return nil
 }
 
-func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller {
+func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) (*Controller, error) {
 	c := &Controller{
 		clusterID: spec.ClusterID,
 	}
-	var err error
+	err := InitEnvVars(syncerConfig)
+	if err != nil {
+		return nil, errors.Wrap(err, "error init environment vars")
+	}
+
 	_, gvr, err := util.ToUnstructuredResource(&kubeovnv1.GatewayExIp{}, syncerConfig.RestMapper)
-	klog.Info(gvr)
-	klog.Info(err)
+	if err != nil {
+		return nil, errors.Wrap(err, "error ToUnstructuredResource")
+	}
+
 	// 配置 Syncer
 	syncerConfig.LocalNamespace = metav1.NamespaceAll
 	syncerConfig.LocalClusterID = spec.ClusterID
@@ -110,18 +178,16 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 	// 创建broker Syncer, 对于syncerConfig.ResourceConfigs中的所有资源进行双向同步
 	c.syncer, err = broker.NewSyncer(syncerConfig)
 	if err != nil {
-		klog.Info(err)
-		return nil
+		return nil, errors.Wrap(err, "error creating GatewayExIp syncer")
 	}
-	return c
+	return c, nil
 }
 
-func (c *Controller) Start(ctx context.Context) error {
-	stopCh := ctx.Done()
+func (c *Controller) Start(stopCh <-chan struct{}) error {
 	if err := c.syncer.Start(stopCh); err != nil {
 		return errors.Wrap(err, "error starting syncer")
 	}
-	klog.Info("Agent controller started")
+	log.Log.Info("Agent controller started")
 	return nil
 }
 
