@@ -32,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -157,6 +158,7 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) (*Controlle
 
 	_, gvr, err := util.ToUnstructuredResource(&kubeovnv1.GatewayExIp{}, syncerConfig.RestMapper)
 	if err != nil {
+		klog.Info(gvr)
 		return nil, errors.Wrap(err, "error ToUnstructuredResource")
 	}
 
