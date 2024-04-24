@@ -4,41 +4,41 @@ kind: ClusterRole
 metadata:
   name: manager-role
 rules:
-  - apiGroups:
-      - kubeovn.ustc.io
-    resources:
-      - gatewayexips
-    verbs:
-      - create
-      - delete
-      - get
-      - list
-      - patch
-      - update
-      - watch
-  - apiGroups:
-      - kubeovn.ustc.io
-    resources:
-      - gatewayexips/finalizers
-    verbs:
-      - update
-  - apiGroups:
-      - kubeovn.ustc.io
-    resources:
-      - gatewayexips/status
-    verbs:
-      - get
-      - patch
-      - update
-  - apiGroups:
-      - submariner.io
-    resources:
-      - servicediscoveries
-    verbs:
-      - create
-      - delete
-      - get
-      - list
-      - patch
-      - update
-      - watch
+- apiGroups:
+  - kubeovn.ustc.io
+  resources:
+  - gatewayexips
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - kubeovn.ustc.io
+  resources:
+  - gatewayexips/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - kubeovn.ustc.io
+  resources:
+  - gatewayexips/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - submariner.io
+  resources:
+  - servicediscoveries
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
