@@ -58,12 +58,6 @@ spec:
             type: object
           status:
             description: GatewayExIpStatus defines the observed state of GatewayExIp
-            properties:
-              externalip:
-                description: |-
-                  INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-                  Important: Run "make" to regenerate code after modifying this file
-                type: string
             type: object
         type: object
     served: true
@@ -160,6 +154,18 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - submariner.io
+  resources:
+  - servicediscoveries
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -341,7 +347,7 @@ spec:
         - --leader-elect
         command:
         - /manager
-        image: shenzuzhenwang/kubeovn-multivpc:alpha
+        image: ghcr.io/shenzuzhenwang/kubeovn-multivpc:master
         livenessProbe:
           httpGet:
             path: /healthz
