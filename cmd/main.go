@@ -23,16 +23,16 @@ import (
 	"github.com/submariner-io/admiral/pkg/log"
 	"github.com/submariner-io/admiral/pkg/syncer/broker"
 	"github.com/submariner-io/admiral/pkg/util"
+	submarinerv1alpha1 "github.com/submariner-io/submariner-operator/api/v1alpha1"
+	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/dynamic"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"kubeovn-multivpc/internal/controller"
 	"os"
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
-
-	"k8s.io/apimachinery/pkg/runtime"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -52,6 +52,8 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(kubeovnv1.AddToScheme(scheme))
+
+	utilruntime.Must(submarinerv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -109,17 +111,6 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "a18cab20.ustc.io",
-		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
-		// when the Manager ends. This requires the binary to immediately end when the
-		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
-		// speeds up voluntary leader transitions as the new leader don't have to wait
-		// LeaseDuration time first.
-		//
-		// In the default scaffold provided, the program ends immediately after
-		// the manager stops, so would be fine to enable this option. However,
-		// if you are doing or is intended to do any operation such as perform cleanups
-		// after the manager stops then its usage might be unsafe.
-		// LeaderElectionReleaseOnCancel: true,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
@@ -127,8 +118,15 @@ func main() {
 	}
 
 	/************/
+	// 创建config
+	cfg := mgr.GetConfig()
+	localClient, err := dynamic.NewForConfig(cfg)
+	if err != nil {
+		setupLog.Error(err, "Error creating dynamic client")
+		os.Exit(1)
+	}
 	// 设置环境变量
-	err = controller.InitEnvVars(mgr.GetClient())
+	err = controller.InitEnvVars(localClient, scheme)
 	if err != nil {
 		setupLog.Error(err, "problem init envvar")
 		os.Exit(1)
@@ -140,23 +138,16 @@ func main() {
 		setupLog.Error(err, "Error processing env config for agent spec")
 		os.Exit(1)
 	}
-	// 创建config
-	cfg := mgr.GetConfig()
 	restMapper, err := util.BuildRestMapper(cfg)
 	if err != nil {
 		setupLog.Error(err, "Error building rest mapper")
-		os.Exit(1)
-	}
-	localClient, err := dynamic.NewForConfig(cfg)
-	if err != nil {
-		setupLog.Error(err, "Error creating dynamic client")
 		os.Exit(1)
 	}
 	if err = mgr.Add(controller.New(&agentSpec, broker.SyncerConfig{
 		LocalRestConfig: cfg,
 		LocalClient:     localClient,
 		RestMapper:      restMapper,
-		Scheme:          clientgoscheme.Scheme,
+		Scheme:          mgr.GetScheme(),
 	})); err != nil {
 		setupLog.Error(err, "unable to set up gatewayexip agent")
 		os.Exit(1)

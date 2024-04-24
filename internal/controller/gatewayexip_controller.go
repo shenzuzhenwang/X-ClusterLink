@@ -21,14 +21,16 @@ import (
 	"github.com/pkg/errors"
 	"github.com/submariner-io/admiral/pkg/syncer"
 	"github.com/submariner-io/admiral/pkg/syncer/broker"
+	"github.com/submariner-io/admiral/pkg/util"
 	submarinerv1alpha1 "github.com/submariner-io/submariner-operator/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/klog/v2"
 	kubeovnv1 "kubeovn-multivpc/api/v1"
 	"os"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 	"strconv"
 	"time"
 )
@@ -56,12 +58,18 @@ type Controller struct {
 }
 
 // 设置环境变量，从ServiceDiscovery对象
-func InitEnvVars(c client.Client) error {
+func InitEnvVars(c dynamic.Interface, scheme *runtime.Scheme) error {
 	cr := &submarinerv1alpha1.ServiceDiscovery{}
-	if err := c.Get(context.TODO(), types.NamespacedName{Namespace: "submariner-operator"}, cr); err != nil {
-		log.Log.Error(err, "problem init envvar")
+	obj, err := c.Resource(schema.GroupVersionResource{
+		Group:    "submariner.io",
+		Version:  "v1alpha1",
+		Resource: "servicediscoveries",
+	}).Namespace("submariner-operator").Get(context.TODO(), "service-discovery", metav1.GetOptions{})
+	if err != nil {
+		klog.Info(err, "problem init envvar")
 		return err
 	}
+	utilruntime.Must(scheme.Convert(obj, cr, nil))
 	os.Setenv("SUBMARINER_NAMESPACE", cr.Spec.Namespace)
 	os.Setenv("SUBMARINER_CLUSTERID", cr.Spec.ClusterID)
 	os.Setenv("SUBMARINER_DEBUG", strconv.FormatBool(cr.Spec.Debug))
@@ -81,6 +89,9 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 		clusterID: spec.ClusterID,
 	}
 	var err error
+	_, gvr, err := util.ToUnstructuredResource(&kubeovnv1.GatewayExIp{}, syncerConfig.RestMapper)
+	klog.Info(gvr)
+	klog.Info(err)
 	// 配置 Syncer
 	syncerConfig.LocalNamespace = metav1.NamespaceAll
 	syncerConfig.LocalClusterID = spec.ClusterID
@@ -99,6 +110,7 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 	// 创建broker Syncer, 对于syncerConfig.ResourceConfigs中的所有资源进行双向同步
 	c.syncer, err = broker.NewSyncer(syncerConfig)
 	if err != nil {
+		klog.Info(err)
 		return nil
 	}
 	return c
@@ -109,22 +121,26 @@ func (c *Controller) Start(ctx context.Context) error {
 	if err := c.syncer.Start(stopCh); err != nil {
 		return errors.Wrap(err, "error starting syncer")
 	}
-	log.Log.Info("Agent controller started")
+	klog.Info("Agent controller started")
 	return nil
 }
 
+// local 同步到 Broker 前执行的操作
 func (c *Controller) onLocalGatewayExIp(obj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
 	return obj, false
 }
 
+// local 成功同步到 Broker 后执行的操作
 func (c *Controller) onLocalGatewayExIpSynced(obj runtime.Object, op syncer.Operation) bool {
 	return false
-	// return err != nil
 }
+
+// Broker 同步到 local 前执行的操作
 func (c *Controller) onRemoteGatewayExIp(obj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
 	return obj, false
 }
+
+// Broker 成功同步到 local 后执行的操作
 func (c *Controller) onRemoteGatewayExIpSynced(obj runtime.Object, op syncer.Operation) bool {
 	return false
-	// return err != nil
 }
