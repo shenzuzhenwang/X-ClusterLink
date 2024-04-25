@@ -18,6 +18,9 @@ package controller
 
 import (
 	"context"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/klog/v2"
 	kubeovnv1 "kubeovn-multivpc/api/v1"
 	"os"
 	"strconv"
@@ -131,7 +134,24 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 		log.Log.Error(err, "error init environment vars")
 		return nil
 	}
-
+	// 遍历所有 Vpc-Gateway 获取 ip 生成 GatewayExIp
+	clientSet, err := kubernetes.NewForConfig(syncerConfig.LocalRestConfig)
+	if err != nil {
+		klog.Info(err)
+		return nil
+	}
+	labelSelector := labels.Set{
+		"ovn.kubernetes.io/vpc-nat-gw": "true",
+	}
+	options := metav1.ListOptions{
+		LabelSelector: labelSelector.String(),
+	}
+	podList, err := clientSet.CoreV1().Pods("kube-system").List(context.Background(), options)
+	if err != nil {
+		klog.Info(err)
+		return nil
+	}
+	klog.Info(podList)
 	// 配置 Syncer
 	syncerConfig.LocalNamespace = metav1.NamespaceAll
 	syncerConfig.LocalClusterID = spec.ClusterID
