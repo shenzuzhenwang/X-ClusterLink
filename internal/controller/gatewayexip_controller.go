@@ -18,10 +18,6 @@ package controller
 
 import (
 	"context"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/klog/v2"
 	kubeovnv1 "kubeovn-multivpc/api/v1"
 	"os"
 	"strconv"
@@ -44,7 +40,6 @@ import (
 //+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips/finalizers,verbs=update
 //+kubebuilder:rbac:groups=submariner.io,resources=servicediscoveries,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=submariner.io,resources=servicediscoveries,verbs=get;list;watch;
 
 // GatewayExIpReconciler reconciles a GatewayExIp object
 type GatewayExIpReconciler struct {
@@ -135,41 +130,7 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 		log.Log.Error(err, "error init environment vars")
 		return nil
 	}
-	// 遍历所有 Vpc-Gateway 获取 ip 生成 GatewayExIp
-	clientSet, err := kubernetes.NewForConfig(syncerConfig.LocalRestConfig)
-	if err != nil {
-		klog.Info(err)
-		return nil
-	}
-	labelSelector := labels.Set{
-		"ovn.kubernetes.io/vpc-nat-gw": "true",
-	}
-	options := metav1.ListOptions{
-		LabelSelector: labelSelector.String(),
-	}
-	podList, err := clientSet.CoreV1().Pods("kube-system").List(context.Background(), options)
-	if err != nil {
-		klog.Info(err)
-		return nil
-	}
-	for _, pod := range podList.Items {
-		gatewayExIp := &kubeovnv1.GatewayExIp{}
-		gatewayExIp.Spec.ExternalIP = pod.ObjectMeta.GetObjectMeta().GetLabels()["ovn-vpc-external-network.kube-system.kubernetes.io/ip_address"]
-		gatewayExIp.Name = pod.Name[11:len(pod.Name)-2] + "-" + pod.Namespace
-		gatewayExIp.Namespace = pod.Namespace
-		gatewayExIp.Status.ExternalIP = gatewayExIp.Spec.ExternalIP
-		obj := &unstructured.Unstructured{}
-		utilruntime.Must(syncerConfig.Scheme.Convert(gatewayExIp, obj, nil))
-		_, err := syncerConfig.LocalClient.Resource(schema.GroupVersionResource{
-			Group:    "kubeovn.ustc.io",
-			Version:  "v1",
-			Resource: "gatewayexips",
-		}).Create(context.Background(), obj, metav1.CreateOptions{})
-		if err != nil {
-			klog.Info(err)
-			return nil
-		}
-	}
+
 	// 配置 Syncer
 	syncerConfig.LocalNamespace = metav1.NamespaceAll
 	syncerConfig.LocalClusterID = spec.ClusterID
@@ -189,7 +150,6 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 	c.syncer, err = broker.NewSyncer(syncerConfig)
 	if err != nil {
 		log.Log.Error(err, "error creating GatewayExIp syncer")
-		// klog.Info(err)
 		return nil
 	}
 	return c
@@ -206,7 +166,11 @@ func (c *Controller) Start(ctx context.Context) error {
 
 // local 同步到 Broker 前执行的操作
 func (c *Controller) onLocalGatewayExIp(obj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
-	return obj, false
+	gatewayExIp := obj.(*kubeovnv1.GatewayExIp)
+	if gatewayExIp.Namespace == "submariner-k8s-broker" {
+		return nil, false
+	}
+	return gatewayExIp, false
 }
 
 // local 成功同步到 Broker 后执行的操作

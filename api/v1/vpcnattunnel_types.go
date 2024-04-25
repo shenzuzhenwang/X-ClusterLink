@@ -25,13 +25,8 @@ import (
 
 // VpcNatTunnelSpec defines the desired state of VpcNatTunnel
 type VpcNatTunnelSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// Foo is an example field of VpcNatTunnel. Edit vpcnattunnel_types.go to remove/update
-	// InternalIP    string `json:"internalIp"`
-	RemoteIP      string `json:"remoteIp"`
+	ClusterId     string `json:"clusterId"`
+	GatewayId     string `json:"gatewayId"`
 	InterfaceAddr string `json:"interfaceAddr"`
 	NatGwDp       string `json:"natGwDp"`
 	// +kubebuilder:default="gre"
