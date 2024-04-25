@@ -18,11 +18,10 @@ package controller
 
 import (
 	"context"
+	kubeovnv1 "kubeovn-multivpc/api/v1"
 	"os"
 	"strconv"
 	"time"
-
-	kubeovnv1 "kubeovn-multivpc/api/v1"
 
 	"github.com/pkg/errors"
 	"github.com/submariner-io/admiral/pkg/syncer"
@@ -37,30 +36,19 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+//+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips/finalizers,verbs=update
+//+kubebuilder:rbac:groups=submariner.io,resources=servicediscoveries,verbs=get;list;watch;create;update;patch;delete
+
 // GatewayExIpReconciler reconciles a GatewayExIp object
 type GatewayExIpReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 }
 
-//+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips/finalizers,verbs=update
-//+kubebuilder:rbac:groups=submariner.io,resources=servicediscoveries,verbs=get;list;watch;create;update;patch;delete
-
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the GatewayExIp object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.17.0/pkg/reconcile
 func (r *GatewayExIpReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = log.FromContext(ctx)
-
-	// TODO(user): your logic here
 	// Fetch the GatewayExIp instance
 	var gatewayExIp kubeovnv1.GatewayExIp
 	if err := r.Get(ctx, req.NamespacedName, &gatewayExIp); err != nil {
@@ -90,13 +78,25 @@ func (r *GatewayExIpReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-// 设置环境变量，从ServiceDiscovery对象
-func initEnvVars(syncerConf broker.SyncerConfig) error {
-	// if err := r.Get(context.TODO(), types.NamespacedName{Namespace: "submariner-operator"}, cr); err != nil {
-	// 	log.Log.Error(err, "problem init envvar")
-	// 	os.Exit(1)
-	// }
+type AgentSpecification struct {
+	ClusterID        string
+	Namespace        string
+	Verbosity        int
+	GlobalnetEnabled bool `split_words:"true"`
+	Uninstall        bool
+	HaltOnCertError  bool `split_words:"true"`
+	Debug            bool
+}
 
+var BrokerResyncPeriod = time.Minute * 2
+
+type Controller struct {
+	clusterID string
+	syncer    *broker.Syncer
+}
+
+// 设置环境变量，从ServiceDiscovery对象
+func InitEnvVars(syncerConf broker.SyncerConfig) error {
 	cr := &submarinerv1alpha1.ServiceDiscovery{}
 	obj, err := syncerConf.LocalClient.Resource(schema.GroupVersionResource{
 		Group:    "submariner.io",
@@ -106,9 +106,7 @@ func initEnvVars(syncerConf broker.SyncerConfig) error {
 	if err != nil {
 		return err
 	}
-
 	utilruntime.Must(syncerConf.Scheme.Convert(obj, cr, nil))
-
 	os.Setenv("SUBMARINER_NAMESPACE", cr.Spec.Namespace)
 	os.Setenv("SUBMARINER_CLUSTERID", cr.Spec.ClusterID)
 	os.Setenv("SUBMARINER_DEBUG", strconv.FormatBool(cr.Spec.Debug))
@@ -120,51 +118,25 @@ func initEnvVars(syncerConf broker.SyncerConfig) error {
 	os.Setenv(broker.EnvironmentVariable("CA"), cr.Spec.BrokerK8sCA)
 	os.Setenv(broker.EnvironmentVariable("Insecure"), strconv.FormatBool(cr.Spec.BrokerK8sInsecure))
 	os.Setenv(broker.EnvironmentVariable("Secret"), cr.Spec.BrokerK8sSecret)
-
 	return nil
 }
 
-type AgentSpecification struct {
-	ClusterID        string
-	Namespace        string
-	Verbosity        int
-	GlobalnetEnabled bool `split_words:"true"`
-	Uninstall        bool
-	HaltOnCertError  bool `split_words:"true"`
-	Debug            bool
-}
-type Controller struct {
-	clusterID string
-	syncer    *broker.Syncer
-	// serviceImportAggregator *ServiceImportAggregator
-	// serviceExportClient     *ServiceExportClient
-	// serviceSyncer syncer.Interface
-	// conflictCheckWorkQueue workqueue.Interface
-}
-
-var BrokerResyncPeriod = time.Minute * 2
-
-func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) (*Controller, error) {
+func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller {
 	c := &Controller{
 		clusterID: spec.ClusterID,
-		// serviceExportClient:    serviceExportClient,
-		// serviceSyncer:          serviceSyncer,
-		// conflictCheckWorkQueue: workqueue.New("ConflictChecker"),
 	}
-
-	err := initEnvVars(syncerConfig)
+	err := InitEnvVars(syncerConfig)
 	if err != nil {
-		return nil, errors.Wrap(err, "error init environment vars")
+		log.Log.Error(err, "error init environment vars")
+		return nil
 	}
 
+	// 配置 Syncer
 	syncerConfig.LocalNamespace = metav1.NamespaceAll
 	syncerConfig.LocalClusterID = spec.ClusterID
 	syncerConfig.ResourceConfigs = []broker.ResourceConfig{
 		{
-			LocalSourceNamespace: metav1.NamespaceAll,
-			// LocalSourceLabelSelector: k8slabels.SelectorFromSet(map[string]string{
-			// 	discovery.LabelManagedBy: constants.LabelValueManagedBy,
-			// }).String(),
+			LocalSourceNamespace:       metav1.NamespaceAll,
 			LocalResourceType:          &kubeovnv1.GatewayExIp{},
 			TransformLocalToBroker:     c.onLocalGatewayExIp,
 			OnSuccessfulSyncToBroker:   c.onLocalGatewayExIpSynced,
@@ -174,46 +146,43 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) (*Controlle
 			BrokerResyncPeriod:         BrokerResyncPeriod,
 		},
 	}
-
-	// broker 接口，对于syncerConfig.ResourceConfigs中的所有资源进行双向同步
+	// 创建broker Syncer, 对于syncerConfig.ResourceConfigs中的所有资源进行双向同步
 	c.syncer, err = broker.NewSyncer(syncerConfig)
 	if err != nil {
-		return nil, errors.Wrap(err, "error creating GatewayExIp syncer")
+		log.Log.Error(err, "error creating GatewayExIp syncer")
+		// klog.Info(err)
+		return nil
 	}
-
-	// c.serviceImportAggregator = newServiceImportAggregator(c.syncer.GetBrokerClient(), c.syncer.GetBrokerNamespace(),
-	// 	spec.ClusterID, syncerConfig.Scheme)
-
-	return c, nil
+	return c
 }
 
-func (c *Controller) Start(stopCh <-chan struct{}) error {
+func (c *Controller) Start(ctx context.Context) error {
+	stopCh := ctx.Done()
 	if err := c.syncer.Start(stopCh); err != nil {
 		return errors.Wrap(err, "error starting syncer")
 	}
-	// c.conflictCheckWorkQueue.Run(stopCh, c.checkForConflicts)
-
-	// go func() {
-	// 	<-stopCh
-	// 	c.conflictCheckWorkQueue.ShutDown()
-	// }()
 	log.Log.Info("Agent controller started")
-
 	return nil
 }
 
+// local 同步到 Broker 前执行的操作
 func (c *Controller) onLocalGatewayExIp(obj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
 	return obj, false
 }
 
+// local 成功同步到 Broker 后执行的操作
 func (c *Controller) onLocalGatewayExIpSynced(obj runtime.Object, op syncer.Operation) bool {
 	return false
-	// return err != nil
 }
+
+// Broker 同步到 local 前执行的操作
 func (c *Controller) onRemoteGatewayExIp(obj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
-	return obj, false
+	gatewayExIp := obj.(*kubeovnv1.GatewayExIp)
+	gatewayExIp.Namespace = gatewayExIp.GetObjectMeta().GetLabels()["submariner-io/originatingNamespace"]
+	return gatewayExIp, false
 }
+
+// Broker 成功同步到 local 后执行的操作
 func (c *Controller) onRemoteGatewayExIpSynced(obj runtime.Object, op syncer.Operation) bool {
 	return false
-	// return err != nil
 }
