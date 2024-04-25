@@ -168,6 +168,9 @@ func (c *Controller) Start(ctx context.Context) error {
 // local 同步到 Broker 前执行的操作
 func (c *Controller) onLocalGatewayExIp(obj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
 	gatewayExIp := obj.(*kubeovnv1.GatewayExIp)
+	if gatewayExIp.Labels == nil {
+		gatewayExIp.Labels = make(map[string]string)
+	}
 	gatewayExIp.Labels["sourceNamespace"] = gatewayExIp.Namespace
 	return gatewayExIp, false
 }
