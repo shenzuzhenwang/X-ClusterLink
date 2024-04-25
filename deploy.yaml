@@ -347,7 +347,7 @@ spec:
         - --leader-elect
         command:
         - /manager
-        image: ghcr.io/shenzuzhenwang/kubeovn-multivpc:master
+        image: ghcr.io/shenzuzhenwang/kubeovn-multivpc:latest
         livenessProbe:
           httpGet:
             path: /healthz
