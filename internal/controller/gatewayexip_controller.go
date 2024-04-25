@@ -48,7 +48,6 @@ import (
 //+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips/finalizers,verbs=update
 //+kubebuilder:rbac:groups=submariner.io,resources=servicediscoveries,verbs=get;list;watch;create;update;patch;delete
 
-// GatewayExIpReconciler reconciles a GatewayExIp object
 type GatewayExIpReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
@@ -56,7 +55,6 @@ type GatewayExIpReconciler struct {
 
 func (r *GatewayExIpReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = log.FromContext(ctx)
-	// Fetch the GatewayExIp instance
 	var gatewayExIp kubeovnv1.GatewayExIp
 	if err := r.Get(ctx, req.NamespacedName, &gatewayExIp); err != nil {
 		log.Log.Error(err, "unable to fetch GatewayExIp")
@@ -103,7 +101,7 @@ type Controller struct {
 	scheme    *runtime.Scheme
 }
 
-// 设置环境变量，从ServiceDiscovery对象
+// 设置环境变量，从 ServiceDiscovery 对象
 func InitEnvVars(syncerConf broker.SyncerConfig) error {
 	cr := &submarinerv1alpha1.ServiceDiscovery{}
 	obj, err := syncerConf.LocalClient.Resource(schema.GroupVersionResource{

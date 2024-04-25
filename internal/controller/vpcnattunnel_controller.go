@@ -21,12 +21,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"k8s.io/klog/v2"
-	"strings"
-	"time"
-
-	// appsv1 "k8s.io/api/apps/v1"
-
 	Submariner "github.com/submariner-io/submariner/pkg/apis/submariner.io/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -35,13 +29,15 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/remotecommand"
+	"k8s.io/klog/v2"
+	kubeovnv1 "kubeovn-multivpc/api/v1"
+	"kubeovn-multivpc/internal/tunnel/factory"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-
-	kubeovnv1 "kubeovn-multivpc/api/v1"
-	"kubeovn-multivpc/internal/tunnel/factory"
+	"strings"
+	"time"
 )
 
 // VpcNatTunnelReconciler reconciles a VpcNatTunnel object
@@ -62,15 +58,6 @@ type VpcNatTunnelReconciler struct {
 //+kubebuilder:rbac:groups=submariner.io,resources=clusterglobalegressips,verbs=get;list;watch
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the VpcNatTunnel object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.17.0/pkg/reconcile
 func (r *VpcNatTunnelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = log.FromContext(ctx)
 
@@ -215,10 +202,6 @@ func (r *VpcNatTunnelReconciler) getPodGwIP(pod *corev1.Pod) (string, error) {
 
 func (r *VpcNatTunnelReconciler) genCreateTunnelCmd(tunnel *kubeovnv1.VpcNatTunnel) string {
 	return r.tunnelOpFact.CreateTunnelOperation(tunnel).CreateCmd()
-	// createCmd := fmt.Sprintf("ip tunnel add %s mode gre remote %s local %s ttl 255", tunnel.Name, tunnel.Spec.RemoteIP, tunnel.Status.InternalIP)
-	// setUpCmd := fmt.Sprintf("ip link set %s up", tunnel.Name)
-	// addrCmd := fmt.Sprintf("ip addr add %s dev %s", tunnel.Spec.InterfaceAddr, tunnel.Name)
-	// return createCmd + ";" + setUpCmd + ";" + addrCmd
 }
 
 func genGlobalnetRoute(GlobalnetCIDR string, ovnGwIP string, RemoteGlobalnetCIDR string, tunnelName string, GlobalEgressIP []string) string {
@@ -243,8 +226,6 @@ func genDelGlobalnetRoute(GlobalnetCIDR string, ovnGwIP string, RemoteGlobalnetC
 
 func (r *VpcNatTunnelReconciler) genDeleteTunnelCmd(tunnel *kubeovnv1.VpcNatTunnel) string {
 	return r.tunnelOpFact.CreateTunnelOperation(tunnel).DeleteCmd()
-	// delCmd := fmt.Sprintf("ip tunnel del %s", tunnel.Name)
-	// return delCmd
 }
 
 func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTunnel *kubeovnv1.VpcNatTunnel) (ctrl.Result, error) {
