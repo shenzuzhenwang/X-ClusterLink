@@ -150,7 +150,6 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 	c.syncer, err = broker.NewSyncer(syncerConfig)
 	if err != nil {
 		log.Log.Error(err, "error creating GatewayExIp syncer")
-		// klog.Info(err)
 		return nil
 	}
 	return c
@@ -168,10 +167,9 @@ func (c *Controller) Start(ctx context.Context) error {
 // local 同步到 Broker 前执行的操作
 func (c *Controller) onLocalGatewayExIp(obj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
 	gatewayExIp := obj.(*kubeovnv1.GatewayExIp)
-	if gatewayExIp.Labels == nil {
-		gatewayExIp.Labels = make(map[string]string)
+	if gatewayExIp.Namespace == "submariner-k8s-broker" {
+		return nil, false
 	}
-	gatewayExIp.Labels["sourceNamespace"] = gatewayExIp.Namespace
 	return gatewayExIp, false
 }
 
@@ -183,7 +181,7 @@ func (c *Controller) onLocalGatewayExIpSynced(obj runtime.Object, op syncer.Oper
 // Broker 同步到 local 前执行的操作
 func (c *Controller) onRemoteGatewayExIp(obj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
 	gatewayExIp := obj.(*kubeovnv1.GatewayExIp)
-	gatewayExIp.Namespace = gatewayExIp.GetObjectMeta().GetLabels()["sourceNamespace"]
+	gatewayExIp.Namespace = gatewayExIp.GetObjectMeta().GetLabels()["submariner-io/originatingNamespace"]
 	return gatewayExIp, false
 }
 
