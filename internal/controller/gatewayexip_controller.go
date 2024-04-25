@@ -167,6 +167,8 @@ func (c *Controller) Start(ctx context.Context) error {
 
 // local 同步到 Broker 前执行的操作
 func (c *Controller) onLocalGatewayExIp(obj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
+	gatewayExIp := obj.(*kubeovnv1.GatewayExIp)
+	gatewayExIp.Labels["sourceNamespace"] = gatewayExIp.Namespace
 	return obj, false
 }
 
@@ -178,7 +180,7 @@ func (c *Controller) onLocalGatewayExIpSynced(obj runtime.Object, op syncer.Oper
 // Broker 同步到 local 前执行的操作
 func (c *Controller) onRemoteGatewayExIp(obj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
 	gatewayExIp := obj.(*kubeovnv1.GatewayExIp)
-	gatewayExIp.Namespace = gatewayExIp.GetObjectMeta().GetLabels()["submariner-io/originatingNamespace"]
+	gatewayExIp.Namespace = gatewayExIp.GetObjectMeta().GetLabels()["sourceNamespace"]
 	return gatewayExIp, false
 }
 
