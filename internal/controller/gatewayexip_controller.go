@@ -40,6 +40,7 @@ import (
 //+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips/finalizers,verbs=update
 //+kubebuilder:rbac:groups=submariner.io,resources=servicediscoveries,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=submariner.io,resources=servicediscoveries,verbs=get;list;watch;
 
 // GatewayExIpReconciler reconciles a GatewayExIp object
 type GatewayExIpReconciler struct {

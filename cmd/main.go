@@ -19,17 +19,22 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+	"os"
+
 	"github.com/kelseyhightower/envconfig"
+	ovn "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
 	"github.com/submariner-io/admiral/pkg/log"
 	"github.com/submariner-io/admiral/pkg/syncer/broker"
 	"github.com/submariner-io/admiral/pkg/util"
 	submarinerv1alpha1 "github.com/submariner-io/submariner-operator/api/v1alpha1"
+	Submariner "github.com/submariner-io/submariner/pkg/apis/submariner.io/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/dynamic"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+
 	"kubeovn-multivpc/internal/controller"
-	"os"
+
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -49,6 +54,10 @@ var (
 )
 
 func init() {
+	utilruntime.Must(ovn.AddToScheme(scheme))
+
+	utilruntime.Must(Submariner.AddToScheme(scheme))
+
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(kubeovnv1.AddToScheme(scheme))
@@ -120,12 +129,34 @@ func main() {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
-
+	// VpcNatTunnel Reconciler
+	vpcNatTunnelReconciler := &controller.VpcNatTunnelReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}
+	if err = (vpcNatTunnelReconciler).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "VpcNatTunnel")
+		os.Exit(1)
+	}
+	// VpcDnsForward Reconciler
+	if err = (&controller.VpcDnsForwardReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "VpcDnsForward")
+		os.Exit(1)
+	}
+	// GatewayExIp Reconciler
 	if err = (&controller.GatewayExIpReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "GatewayExIp")
+		os.Exit(1)
+	}
+	// Gateway Informer
+	if err := mgr.Add(controller.NewInformer(mgr.GetClient(), mgr.GetConfig(), vpcNatTunnelReconciler)); err != nil {
+		setupLog.Error(err, "unable to set up gateway informer")
 		os.Exit(1)
 	}
 
