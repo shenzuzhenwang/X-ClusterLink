@@ -31,20 +31,13 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/dynamic"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/tools/clientcmd"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
-	"github.com/kelseyhightower/envconfig"
-	"github.com/submariner-io/admiral/pkg/log"
-	"github.com/submariner-io/admiral/pkg/syncer/broker"
-	"github.com/submariner-io/admiral/pkg/util"
-	"k8s.io/client-go/dynamic"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
@@ -112,55 +105,6 @@ func main() {
 	webhookServer := webhook.NewServer(webhook.Options{
 		TLSOpts: tlsOpts,
 	})
-	/************/
-
-	agentSpec := controller.AgentSpecification{
-		Verbosity: log.DEBUG,
-	}
-	if err := envconfig.Process("submariner", &agentSpec); err != nil {
-		setupLog.Error(err, "Error processing env config for agent spec")
-		os.Exit(1)
-	}
-	// 创建config   **********
-	cfg, err := clientcmd.BuildConfigFromFlags("", "")
-	if err != nil {
-		setupLog.Error(err, "Error building kubeconfig")
-		os.Exit(1)
-	}
-
-	restMapper, err := util.BuildRestMapper(cfg)
-	if err != nil {
-		setupLog.Error(err, "Error building rest mapper")
-		os.Exit(1)
-	}
-
-	localClient, err := dynamic.NewForConfig(cfg)
-	if err != nil {
-		setupLog.Error(err, "Error creating dynamic client")
-		os.Exit(1)
-	}
-
-	// set up signals so we handle the first shutdown signal gracefully
-	ctx := signals.SetupSignalHandler()
-
-	gwExIpAgent, err := controller.New(&agentSpec, broker.SyncerConfig{
-		LocalRestConfig: cfg,
-		LocalClient:     localClient,
-		RestMapper:      restMapper,
-		Scheme:          clientgoscheme.Scheme,
-	})
-	if err != nil {
-		setupLog.Error(err, "Error creating gwExIp agent")
-		os.Exit(1)
-	}
-
-	err = gwExIpAgent.Start(ctx.Done())
-	if err != nil {
-		setupLog.Error(err, "Error start gwExIp agent")
-		os.Exit(1)
-	}
-
-	/*****************/
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
