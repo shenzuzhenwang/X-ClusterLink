@@ -255,6 +255,15 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 		}
 	}
 
+	// 获取 GatewayExIp
+	gatewayExIp := &kubeovnv1.GatewayExIp{}
+	err := r.Client.Get(ctx, client.ObjectKey{
+		Name: vpcTunnel.Spec.GatewayId + "-" + vpcTunnel.Spec.ClusterId,
+	}, gatewayExIp)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	if !vpcTunnel.Status.Initialized {
 		// add tunnel
 		podnext, err := r.getNatGwPod(vpcTunnel.Spec.NatGwDp) // find pod named Spec.NatGwDp
@@ -294,14 +303,14 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 		}
 
 		vpcTunnel.Status.Initialized = true
-		vpcTunnel.Status.RemoteIP = vpcTunnel.Spec.RemoteIP
+		vpcTunnel.Status.RemoteIP = gatewayExIp.Spec.ExternalIP
 		vpcTunnel.Status.RemoteGlobalnetCIDR = vpcTunnel.Spec.RemoteGlobalnetCIDR
 		vpcTunnel.Status.InterfaceAddr = vpcTunnel.Spec.InterfaceAddr
 		vpcTunnel.Status.NatGwDp = vpcTunnel.Spec.NatGwDp
 		vpcTunnel.Status.Type = vpcTunnel.Spec.Type
 		r.Status().Update(ctx, vpcTunnel)
 
-	} else if vpcTunnel.Status.Initialized && (vpcTunnel.Status.RemoteIP != vpcTunnel.Spec.RemoteIP || vpcTunnel.Status.InterfaceAddr != vpcTunnel.Spec.InterfaceAddr ||
+	} else if vpcTunnel.Status.Initialized && (vpcTunnel.Status.RemoteIP != gatewayExIp.Spec.ExternalIP || vpcTunnel.Status.InterfaceAddr != vpcTunnel.Spec.InterfaceAddr ||
 		vpcTunnel.Status.NatGwDp != vpcTunnel.Spec.NatGwDp || vpcTunnel.Status.RemoteGlobalnetCIDR != vpcTunnel.Spec.RemoteGlobalnetCIDR) {
 		if vpcTunnel.Status.Type != vpcTunnel.Spec.Type {
 			log.Log.Error(errors.New("tunnel type should not change"), fmt.Sprintf("tunnel :%#v\n", vpcTunnel))
@@ -333,7 +342,7 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 				return ctrl.Result{}, err
 			}
 
-			vpcTunnel.Status.RemoteIP = vpcTunnel.Spec.RemoteIP
+			vpcTunnel.Status.RemoteIP = gatewayExIp.Spec.ExternalIP
 			vpcTunnel.Status.RemoteGlobalnetCIDR = vpcTunnel.Spec.RemoteGlobalnetCIDR
 			vpcTunnel.Status.InterfaceAddr = vpcTunnel.Spec.InterfaceAddr
 			vpcTunnel.Status.NatGwDp = vpcTunnel.Spec.NatGwDp
@@ -390,7 +399,7 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 				return ctrl.Result{}, err
 			}
 
-			vpcTunnel.Status.RemoteIP = vpcTunnel.Spec.RemoteIP
+			vpcTunnel.Status.RemoteIP = gatewayExIp.Spec.ExternalIP
 			vpcTunnel.Status.RemoteGlobalnetCIDR = vpcTunnel.Spec.RemoteGlobalnetCIDR
 			vpcTunnel.Status.InterfaceAddr = vpcTunnel.Spec.InterfaceAddr
 			vpcTunnel.Status.NatGwDp = vpcTunnel.Spec.NatGwDp

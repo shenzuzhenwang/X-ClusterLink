@@ -39,25 +39,25 @@ spec:
           spec:
             description: VpcNatTunnelSpec defines the desired state of VpcNatTunnel
             properties:
+              clusterId:
+                type: string
+              gatewayId:
+                type: string
               interfaceAddr:
                 type: string
               natGwDp:
                 type: string
               remoteGlobalnetCIDR:
                 type: string
-              remoteIp:
-                description: |-
-                  Foo is an example field of VpcNatTunnel. Edit vpcnattunnel_types.go to remove/update
-                  InternalIP    string `json:"internalIp"`
-                type: string
               type:
                 default: gre
                 type: string
             required:
+            - clusterId
+            - gatewayId
             - interfaceAddr
             - natGwDp
             - remoteGlobalnetCIDR
-            - remoteIp
             - type
             type: object
           status:
