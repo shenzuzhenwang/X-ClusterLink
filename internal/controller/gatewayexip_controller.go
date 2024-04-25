@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
@@ -151,7 +152,24 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 		klog.Info(err)
 		return nil
 	}
-	klog.Info(podList)
+	for _, pod := range podList.Items {
+		gatewayExIp := &kubeovnv1.GatewayExIp{}
+		gatewayExIp.Spec.ExternalIP = pod.ObjectMeta.GetObjectMeta().GetLabels()["ovn-vpc-external-network.kube-system.kubernetes.io/ip_address"]
+		gatewayExIp.Name = pod.Name[11:len(pod.Name)-2] + "-" + pod.Namespace
+		gatewayExIp.Namespace = pod.Namespace
+		gatewayExIp.Status.ExternalIP = gatewayExIp.Spec.ExternalIP
+		obj := &unstructured.Unstructured{}
+		utilruntime.Must(syncerConfig.Scheme.Convert(gatewayExIp, obj, nil))
+		_, err := syncerConfig.LocalClient.Resource(schema.GroupVersionResource{
+			Group:    "kubeovn.ustc.io",
+			Version:  "v1",
+			Resource: "gatewayexips",
+		}).Create(context.Background(), obj, metav1.CreateOptions{})
+		if err != nil {
+			klog.Info(err)
+			return nil
+		}
+	}
 	// 配置 Syncer
 	syncerConfig.LocalNamespace = metav1.NamespaceAll
 	syncerConfig.LocalClusterID = spec.ClusterID
