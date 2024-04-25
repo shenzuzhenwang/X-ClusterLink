@@ -18,10 +18,6 @@ package controller
 
 import (
 	"context"
-	"fmt"
-	"github.com/kelseyhightower/envconfig"
-	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 	kubeovnv1 "kubeovn-multivpc/api/v1"
 	"os"
@@ -54,7 +50,6 @@ type GatewayExIpReconciler struct {
 
 func (r *GatewayExIpReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = log.FromContext(ctx)
-	// TODO(user): your logic here
 	// Fetch the GatewayExIp instance
 	var gatewayExIp kubeovnv1.GatewayExIp
 	if err := r.Get(ctx, req.NamespacedName, &gatewayExIp); err != nil {
@@ -152,62 +147,12 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 		},
 	}
 	// 创建broker Syncer, 对于syncerConfig.ResourceConfigs中的所有资源进行双向同步
-	brokerSpec, err := getBrokerSpecification()
-	if err != nil {
-		klog.Info(err)
-	}
-	syncerConfig.BrokerRestConfig = &rest.Config{
-		Host:            fmt.Sprintf("https://%s", brokerSpec.APIServer),
-		TLSClientConfig: rest.TLSClientConfig{Insecure: brokerSpec.Insecure},
-		BearerToken:     brokerSpec.APIServerToken,
-	}
-	flag, err := IsAuthorizedFor(syncerConfig.BrokerRestConfig, schema.GroupVersionResource{
-		Group:    "kubeovn.ustc.io",
-		Version:  "v1",
-		Resource: "gatewayexips",
-	}, "submariner-k8s-broker")
-	klog.Info(flag)
-	klog.Info(err)
 	c.syncer, err = broker.NewSyncer(syncerConfig)
 	if err != nil {
 		klog.Info(err)
 		return nil
 	}
 	return c
-}
-
-type brokerSpecification struct {
-	APIServer       string
-	APIServerToken  string
-	RemoteNamespace string
-	Insecure        bool `default:"false"`
-	Ca              string
-	Secret          string
-}
-
-const brokerConfigPrefix = "broker_k8s"
-
-func IsAuthorizedFor(restConfig *rest.Config, gvr schema.GroupVersionResource, namespace string) (bool, error) {
-	dynamicClient, err := dynamic.NewForConfig(restConfig)
-	if err != nil {
-		return false, errors.Wrap(err, "error creating dynamic client")
-	}
-	_, err = dynamicClient.Resource(gvr).Namespace(namespace).Get(context.TODO(), "any", metav1.GetOptions{})
-	if err != nil {
-		klog.Info(err)
-	}
-	return true, err
-}
-
-func getBrokerSpecification() (*brokerSpecification, error) {
-	brokerSpec := brokerSpecification{}
-
-	err := envconfig.Process(brokerConfigPrefix, &brokerSpec)
-	if err != nil {
-		return nil, errors.Wrap(err, "error processing env configuration")
-	}
-
-	return &brokerSpec, nil
 }
 
 func (c *Controller) Start(ctx context.Context) error {

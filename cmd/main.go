@@ -28,7 +28,6 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/dynamic"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/klog/v2"
 	"kubeovn-multivpc/internal/controller"
 	"os"
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -162,7 +161,6 @@ func main() {
 		setupLog.Error(err, "unable to set up gatewayexip agent")
 		os.Exit(1)
 	}
-	klog.Info("test")
 	/************/
 
 	//+kubebuilder:scaffold:builder
