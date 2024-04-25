@@ -18,7 +18,6 @@ package controller
 
 import (
 	"context"
-	"k8s.io/klog/v2"
 	kubeovnv1 "kubeovn-multivpc/api/v1"
 	"os"
 	"strconv"
@@ -128,6 +127,7 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 	}
 	err := InitEnvVars(syncerConfig)
 	if err != nil {
+		log.Log.Error(err, "error init environment vars")
 		return nil
 	}
 
@@ -149,7 +149,8 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 	// 创建broker Syncer, 对于syncerConfig.ResourceConfigs中的所有资源进行双向同步
 	c.syncer, err = broker.NewSyncer(syncerConfig)
 	if err != nil {
-		klog.Info(err)
+		log.Log.Error(err, "error creating GatewayExIp syncer")
+		// klog.Info(err)
 		return nil
 	}
 	return c
