@@ -18,6 +18,11 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"github.com/kelseyhightower/envconfig"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
+	"k8s.io/klog/v2"
 	kubeovnv1 "kubeovn-multivpc/api/v1"
 	"os"
 	"strconv"
@@ -26,13 +31,11 @@ import (
 	"github.com/pkg/errors"
 	"github.com/submariner-io/admiral/pkg/syncer"
 	"github.com/submariner-io/admiral/pkg/syncer/broker"
-	"github.com/submariner-io/admiral/pkg/util"
 	submarinerv1alpha1 "github.com/submariner-io/submariner-operator/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -49,23 +52,8 @@ type GatewayExIpReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-//+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips/finalizers,verbs=update
-//+kubebuilder:rbac:groups=submariner.io,resources=servicediscoveries,verbs=get;list;watch;create;update;patch;delete
-
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the GatewayExIp object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.17.0/pkg/reconcile
 func (r *GatewayExIpReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = log.FromContext(ctx)
-
 	// TODO(user): your logic here
 	// Fetch the GatewayExIp instance
 	var gatewayExIp kubeovnv1.GatewayExIp
@@ -115,11 +103,6 @@ type Controller struct {
 
 // 设置环境变量，从ServiceDiscovery对象
 func InitEnvVars(syncerConf broker.SyncerConfig) error {
-	// if err := r.Get(context.TODO(), types.NamespacedName{Namespace: "submariner-operator"}, cr); err != nil {
-	// 	log.Log.Error(err, "problem init envvar")
-	// 	os.Exit(1)
-	// }
-
 	cr := &submarinerv1alpha1.ServiceDiscovery{}
 	obj, err := syncerConf.LocalClient.Resource(schema.GroupVersionResource{
 		Group:    "submariner.io",
@@ -129,9 +112,7 @@ func InitEnvVars(syncerConf broker.SyncerConfig) error {
 	if err != nil {
 		return err
 	}
-
 	utilruntime.Must(syncerConf.Scheme.Convert(obj, cr, nil))
-
 	os.Setenv("SUBMARINER_NAMESPACE", cr.Spec.Namespace)
 	os.Setenv("SUBMARINER_CLUSTERID", cr.Spec.ClusterID)
 	os.Setenv("SUBMARINER_DEBUG", strconv.FormatBool(cr.Spec.Debug))
@@ -143,23 +124,16 @@ func InitEnvVars(syncerConf broker.SyncerConfig) error {
 	os.Setenv(broker.EnvironmentVariable("CA"), cr.Spec.BrokerK8sCA)
 	os.Setenv(broker.EnvironmentVariable("Insecure"), strconv.FormatBool(cr.Spec.BrokerK8sInsecure))
 	os.Setenv(broker.EnvironmentVariable("Secret"), cr.Spec.BrokerK8sSecret)
-
 	return nil
 }
 
-func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) (*Controller, error) {
+func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller {
 	c := &Controller{
 		clusterID: spec.ClusterID,
 	}
 	err := InitEnvVars(syncerConfig)
 	if err != nil {
-		return nil, errors.Wrap(err, "error init environment vars")
-	}
-
-	_, gvr, err := util.ToUnstructuredResource(&kubeovnv1.GatewayExIp{}, syncerConfig.RestMapper)
-	if err != nil {
-		klog.Info(gvr)
-		return nil, errors.Wrap(err, "error ToUnstructuredResource")
+		return nil
 	}
 
 	// 配置 Syncer
@@ -178,14 +152,66 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) (*Controlle
 		},
 	}
 	// 创建broker Syncer, 对于syncerConfig.ResourceConfigs中的所有资源进行双向同步
+	brokerSpec, err := getBrokerSpecification()
+	if err != nil {
+		klog.Info(err)
+	}
+	syncerConfig.BrokerRestConfig = &rest.Config{
+		Host:            fmt.Sprintf("https://%s", brokerSpec.APIServer),
+		TLSClientConfig: rest.TLSClientConfig{Insecure: brokerSpec.Insecure},
+		BearerToken:     brokerSpec.APIServerToken,
+	}
+	flag, err := IsAuthorizedFor(syncerConfig.BrokerRestConfig, schema.GroupVersionResource{
+		Group:    "kubeovn.ustc.io",
+		Version:  "v1",
+		Resource: "gatewayexips",
+	}, "submariner-k8s-broker")
+	klog.Info(flag)
+	klog.Info(err)
 	c.syncer, err = broker.NewSyncer(syncerConfig)
 	if err != nil {
-		return nil, errors.Wrap(err, "error creating GatewayExIp syncer")
+		klog.Info(err)
+		return nil
 	}
-	return c, nil
+	return c
 }
 
-func (c *Controller) Start(stopCh <-chan struct{}) error {
+type brokerSpecification struct {
+	APIServer       string
+	APIServerToken  string
+	RemoteNamespace string
+	Insecure        bool `default:"false"`
+	Ca              string
+	Secret          string
+}
+
+const brokerConfigPrefix = "broker_k8s"
+
+func IsAuthorizedFor(restConfig *rest.Config, gvr schema.GroupVersionResource, namespace string) (bool, error) {
+	dynamicClient, err := dynamic.NewForConfig(restConfig)
+	if err != nil {
+		return false, errors.Wrap(err, "error creating dynamic client")
+	}
+	_, err = dynamicClient.Resource(gvr).Namespace(namespace).Get(context.TODO(), "any", metav1.GetOptions{})
+	if err != nil {
+		klog.Info(err)
+	}
+	return true, err
+}
+
+func getBrokerSpecification() (*brokerSpecification, error) {
+	brokerSpec := brokerSpecification{}
+
+	err := envconfig.Process(brokerConfigPrefix, &brokerSpec)
+	if err != nil {
+		return nil, errors.Wrap(err, "error processing env configuration")
+	}
+
+	return &brokerSpec, nil
+}
+
+func (c *Controller) Start(ctx context.Context) error {
+	stopCh := ctx.Done()
 	if err := c.syncer.Start(stopCh); err != nil {
 		return errors.Wrap(err, "error starting syncer")
 	}
