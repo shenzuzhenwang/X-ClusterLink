@@ -169,7 +169,7 @@ func (c *Controller) Start(ctx context.Context) error {
 func (c *Controller) onLocalGatewayExIp(obj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
 	gatewayExIp := obj.(*kubeovnv1.GatewayExIp)
 	gatewayExIp.Labels["sourceNamespace"] = gatewayExIp.Namespace
-	return obj, false
+	return gatewayExIp, false
 }
 
 // local 成功同步到 Broker 后执行的操作
