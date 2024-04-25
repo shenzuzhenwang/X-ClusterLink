@@ -54,7 +54,11 @@ func init() {
 	utilruntime.Must(kubeovnv1.AddToScheme(scheme))
 
 	utilruntime.Must(submarinerv1alpha1.AddToScheme(scheme))
+
+	utilruntime.Must(submarinerv1alpha1.AddToScheme(clientgoscheme.Scheme))
 	//+kubebuilder:scaffold:scheme
+
+	utilruntime.Must(kubeovnv1.AddToScheme(clientgoscheme.Scheme))
 }
 
 func main() {
@@ -117,20 +121,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err = (&controller.GatewayExIpReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "GatewayExIp")
+		os.Exit(1)
+	}
+
 	/************/
-	// 创建config
-	cfg := mgr.GetConfig()
-	localClient, err := dynamic.NewForConfig(cfg)
-	if err != nil {
-		setupLog.Error(err, "Error creating dynamic client")
-		os.Exit(1)
-	}
-	// 设置环境变量
-	err = controller.InitEnvVars(localClient, scheme)
-	if err != nil {
-		setupLog.Error(err, "problem init envvar")
-		os.Exit(1)
-	}
 	agentSpec := controller.AgentSpecification{
 		Verbosity: log.DEBUG,
 	}
@@ -138,23 +137,34 @@ func main() {
 		setupLog.Error(err, "Error processing env config for agent spec")
 		os.Exit(1)
 	}
+	// 创建config
+	cfg := mgr.GetConfig()
+
 	restMapper, err := util.BuildRestMapper(cfg)
 	if err != nil {
 		setupLog.Error(err, "Error building rest mapper")
 		os.Exit(1)
 	}
+
+	localClient, err := dynamic.NewForConfig(cfg)
+	if err != nil {
+		setupLog.Error(err, "Error creating dynamic client")
+		os.Exit(1)
+	}
+
 	if err = mgr.Add(controller.New(&agentSpec, broker.SyncerConfig{
 		LocalRestConfig: cfg,
 		LocalClient:     localClient,
 		RestMapper:      restMapper,
-		Scheme:          mgr.GetScheme(),
+		Scheme:          clientgoscheme.Scheme,
 	})); err != nil {
 		setupLog.Error(err, "unable to set up gatewayexip agent")
 		os.Exit(1)
 	}
-	/*****************/
+	/************/
 
 	//+kubebuilder:scaffold:builder
+
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)

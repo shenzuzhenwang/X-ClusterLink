@@ -1,7 +1,7 @@
 apiVersion: "kubeovn.ustc.io/v1"
 kind: GatewayExIp
 metadata:
-  name: test
+  name: gw1-cluster1
   namespace: ns1
 spec:
   externalip: 172.50.16.99
