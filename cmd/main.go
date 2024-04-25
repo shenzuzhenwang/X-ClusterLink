@@ -161,13 +161,6 @@ func main() {
 	}
 
 	/************/
-	agentSpec := controller.AgentSpecification{
-		Verbosity: log.DEBUG,
-	}
-	if err := envconfig.Process("submariner", &agentSpec); err != nil {
-		setupLog.Error(err, "Error processing env config for agent spec")
-		os.Exit(1)
-	}
 	// 创建config
 	cfg := mgr.GetConfig()
 
@@ -182,13 +175,25 @@ func main() {
 		setupLog.Error(err, "Error creating dynamic client")
 		os.Exit(1)
 	}
-
-	if err = mgr.Add(controller.New(&agentSpec, broker.SyncerConfig{
+	syncerConfig := broker.SyncerConfig{
 		LocalRestConfig: cfg,
 		LocalClient:     localClient,
 		RestMapper:      restMapper,
 		Scheme:          clientgoscheme.Scheme,
-	})); err != nil {
+	}
+	err = controller.InitEnvVars(syncerConfig)
+	if err != nil {
+		setupLog.Error(err, "error init environment vars")
+		os.Exit(1)
+	}
+	agentSpec := controller.AgentSpecification{
+		Verbosity: log.DEBUG,
+	}
+	if err := envconfig.Process("submariner", &agentSpec); err != nil {
+		setupLog.Error(err, "Error processing env config for agent spec")
+		os.Exit(1)
+	}
+	if err = mgr.Add(controller.New(&agentSpec, syncerConfig)); err != nil {
 		setupLog.Error(err, "unable to set up gatewayexip agent")
 		os.Exit(1)
 	}

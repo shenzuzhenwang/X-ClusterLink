@@ -134,16 +134,9 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 		clusterID: spec.ClusterID,
 		scheme:    syncerConfig.Scheme,
 	}
-	err := InitEnvVars(syncerConfig)
-	if err != nil {
-		log.Log.Error(err, "error init environment vars")
-		return nil
-	}
-
 	// 遍历所有 Vpc-Gateway 获取 ip 生成 GatewayExIp
 	clientSet, err := kubernetes.NewForConfig(syncerConfig.LocalRestConfig)
 	if err != nil {
-		klog.Info(err)
 		return nil
 	}
 	labelSelector := labels.Set{
@@ -154,13 +147,14 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 	}
 	podList, err := clientSet.CoreV1().Pods("kube-system").List(context.Background(), options)
 	if err != nil {
+		klog.Info("test")
 		klog.Info(err)
 		return nil
 	}
 	for _, pod := range podList.Items {
 		gatewayExIp := &kubeovnv1.GatewayExIp{}
-		gatewayExIp.Spec.ExternalIP = pod.ObjectMeta.GetObjectMeta().GetLabels()["ovn-vpc-external-network.kube-system.kubernetes.io/ip_address"]
-		gatewayExIp.Name = pod.Name[11:len(pod.Name)-2] + "-" + pod.Namespace
+		gatewayExIp.Spec.ExternalIP = pod.ObjectMeta.GetObjectMeta().GetAnnotations()["ovn-vpc-external-network.kube-system.kubernetes.io/ip_address"]
+		gatewayExIp.Name = pod.Name[11:len(pod.Name)-2] + "-" + c.clusterID
 		gatewayExIp.Namespace = pod.Namespace
 		gatewayExIp.Status.ExternalIP = gatewayExIp.Spec.ExternalIP
 		_, err := syncerConfig.LocalClient.Resource(schema.GroupVersionResource{
@@ -168,19 +162,22 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 			Version:  "v1",
 			Resource: "gatewayexips",
 		}).Get(context.Background(), gatewayExIp.Name, metav1.GetOptions{})
-		if err == nil {
-			continue
-		}
 		obj := &unstructured.Unstructured{}
 		utilruntime.Must(syncerConfig.Scheme.Convert(gatewayExIp, obj, nil))
-		_, err = syncerConfig.LocalClient.Resource(schema.GroupVersionResource{
-			Group:    "kubeovn.ustc.io",
-			Version:  "v1",
-			Resource: "gatewayexips",
-		}).Create(context.Background(), obj, metav1.CreateOptions{})
-		if err != nil {
-			klog.Info(err)
-			return nil
+		if err == nil {
+			// GatewatExIp 存在, 进行更新
+			_, err = syncerConfig.LocalClient.Resource(schema.GroupVersionResource{
+				Group:    "kubeovn.ustc.io",
+				Version:  "v1",
+				Resource: "gatewayexips",
+			}).Namespace(gatewayExIp.Namespace).Update(context.TODO(), obj, metav1.UpdateOptions{})
+		} else {
+			// GatewatExIp 不存在, 进行创建
+			_, err = syncerConfig.LocalClient.Resource(schema.GroupVersionResource{
+				Group:    "kubeovn.ustc.io",
+				Version:  "v1",
+				Resource: "gatewayexips",
+			}).Namespace(gatewayExIp.Namespace).Create(context.TODO(), obj, metav1.CreateOptions{})
 		}
 	}
 	// 配置 Syncer

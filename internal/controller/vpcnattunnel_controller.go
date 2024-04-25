@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"k8s.io/klog/v2"
 	"strings"
 	"time"
 
@@ -258,13 +259,16 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 	// 获取 GatewayExIp
 	gatewayExIp := &kubeovnv1.GatewayExIp{}
 	err := r.Client.Get(ctx, client.ObjectKey{
-		Name: vpcTunnel.Spec.GatewayId + "-" + vpcTunnel.Spec.ClusterId,
+		Name:      vpcTunnel.Spec.GatewayId + "-" + vpcTunnel.Spec.ClusterId,
+		Namespace: "kube-system",
 	}, gatewayExIp)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
 	if !vpcTunnel.Status.Initialized {
+		vpcTunnel.Status.RemoteIP = gatewayExIp.Spec.ExternalIP
+
 		// add tunnel
 		podnext, err := r.getNatGwPod(vpcTunnel.Spec.NatGwDp) // find pod named Spec.NatGwDp
 		if err != nil {
@@ -295,15 +299,16 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 
 		err = r.execCommandInPod(podnext.Name, podnext.Namespace, "vpc-nat-gw", r.genCreateTunnelCmd(vpcTunnel))
 		if err != nil {
+			klog.Info(err)
 			return ctrl.Result{}, err
 		}
 		err = r.execCommandInPod(podnext.Name, podnext.Namespace, "vpc-nat-gw", genGlobalnetRoute(GlobalnetCIDR, ovnGwIP, vpcTunnel.Spec.RemoteGlobalnetCIDR, vpcTunnel.Name, GlobalEgressIP))
 		if err != nil {
+			klog.Info(err)
 			return ctrl.Result{}, err
 		}
 
 		vpcTunnel.Status.Initialized = true
-		vpcTunnel.Status.RemoteIP = gatewayExIp.Spec.ExternalIP
 		vpcTunnel.Status.RemoteGlobalnetCIDR = vpcTunnel.Spec.RemoteGlobalnetCIDR
 		vpcTunnel.Status.InterfaceAddr = vpcTunnel.Spec.InterfaceAddr
 		vpcTunnel.Status.NatGwDp = vpcTunnel.Spec.NatGwDp

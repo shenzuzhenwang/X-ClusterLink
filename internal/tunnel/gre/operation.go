@@ -19,7 +19,7 @@ func NewGreOp(tunnel *v1.VpcNatTunnel) tunnel.TunnelOperation {
 func (g *GreOperation) CreateCmd() string {
 	tunnel := g.tunnel
 
-	createCmd := fmt.Sprintf("ip tunnel add %s mode gre remote %s local %s ttl 255", tunnel.Name, tunnel.Spec.RemoteIP, tunnel.Status.InternalIP)
+	createCmd := fmt.Sprintf("ip tunnel add %s mode gre remote %s local %s ttl 255", tunnel.Name, tunnel.Status.RemoteIP, tunnel.Status.InternalIP)
 	setUpCmd := fmt.Sprintf("ip link set %s up", tunnel.Name)
 	addrCmd := fmt.Sprintf("ip addr add %s dev %s", tunnel.Spec.InterfaceAddr, tunnel.Name)
 	return createCmd + ";" + setUpCmd + ";" + addrCmd
