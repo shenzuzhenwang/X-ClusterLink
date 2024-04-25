@@ -176,7 +176,9 @@ func (c *Controller) onLocalGatewayExIpSynced(obj runtime.Object, op syncer.Oper
 
 // Broker 同步到 local 前执行的操作
 func (c *Controller) onRemoteGatewayExIp(obj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
-	return obj, false
+	gatewayExIp := obj.(*kubeovnv1.GatewayExIp)
+	gatewayExIp.Namespace = gatewayExIp.GetObjectMeta().GetLabels()["submariner-io/originatingNamespace"]
+	return gatewayExIp, false
 }
 
 // Broker 成功同步到 local 后执行的操作
