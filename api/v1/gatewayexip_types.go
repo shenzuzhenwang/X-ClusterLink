@@ -23,7 +23,7 @@ import (
 // GatewayExIpSpec defines the desired state of GatewayExIp
 type GatewayExIpSpec struct {
 	ExternalIP    string `json:"externalIp,omitempty"`
-	GlobalNetCIDR string `json:"globalNetCIDR"`
+	GlobalNetCIDR string `json:"globalNetCIDR,omitempty"`
 }
 
 // GatewayExIpStatus defines the observed state of GatewayExIp

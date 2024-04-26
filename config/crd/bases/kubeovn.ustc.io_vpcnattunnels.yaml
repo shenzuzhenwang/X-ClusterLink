@@ -47,8 +47,6 @@ spec:
                 type: string
               natGwDp:
                 type: string
-              remoteGlobalnetCIDR:
-                type: string
               type:
                 default: gre
                 type: string
@@ -57,7 +55,6 @@ spec:
             - gatewayId
             - interfaceAddr
             - natGwDp
-            - remoteGlobalnetCIDR
             - type
             type: object
           status:
@@ -70,9 +67,6 @@ spec:
               globalnetCIDR:
                 type: string
               initialized:
-                description: |-
-                  INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-                  Important: Run "make" to regenerate code after modifying this file
                 type: boolean
               interfaceAddr:
                 type: string

@@ -39,9 +39,9 @@ spec:
           spec:
             description: GatewayExIpSpec defines the desired state of GatewayExIp
             properties:
-              externalip:
-                description: Foo is an example field of GatewayExIp. Edit gatewayexip_types.go
-                  to remove/update
+              externalIp:
+                type: string
+              globalNetCIDR:
                 type: string
             type: object
           status:

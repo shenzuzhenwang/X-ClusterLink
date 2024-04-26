@@ -51,19 +51,15 @@ spec:
           spec:
             description: GatewayExIpSpec defines the desired state of GatewayExIp
             properties:
-              externalip:
-                description: Foo is an example field of GatewayExIp. Edit gatewayexip_types.go
-                  to remove/update
+              externalIp:
                 type: string
+              globalNetCIDR:
+                type: string
+            required:
+            - globalNetCIDR
             type: object
           status:
             description: GatewayExIpStatus defines the observed state of GatewayExIp
-            properties:
-              externalip:
-                description: |-
-                  INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-                  Important: Run "make" to regenerate code after modifying this file
-                type: string
             type: object
         type: object
     served: true
@@ -112,17 +108,12 @@ spec:
             description: VpcDnsForwardSpec defines the desired state of VpcDnsForward
             properties:
               vpc:
-                description: Foo is an example field of VpcDnsForward. Edit vpcdnsforward_types.go
-                  to remove/update
                 type: string
             type: object
           status:
             description: VpcDnsForwardStatus defines the observed state of VpcDnsForward
             properties:
               initialized:
-                description: |-
-                  INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-                  Important: Run "make" to regenerate code after modifying this file
                 type: boolean
             type: object
         type: object
@@ -171,25 +162,22 @@ spec:
           spec:
             description: VpcNatTunnelSpec defines the desired state of VpcNatTunnel
             properties:
+              clusterId:
+                type: string
+              gatewayId:
+                type: string
               interfaceAddr:
                 type: string
               natGwDp:
-                type: string
-              remoteGlobalnetCIDR:
-                type: string
-              remoteIp:
-                description: |-
-                  Foo is an example field of VpcNatTunnel. Edit vpcnattunnel_types.go to remove/update
-                  InternalIP    string `json:"internalIp"`
                 type: string
               type:
                 default: gre
                 type: string
             required:
+            - clusterId
+            - gatewayId
             - interfaceAddr
             - natGwDp
-            - remoteGlobalnetCIDR
-            - remoteIp
             - type
             type: object
           status:
@@ -202,9 +190,6 @@ spec:
               globalnetCIDR:
                 type: string
               initialized:
-                description: |-
-                  INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-                  Important: Run "make" to regenerate code after modifying this file
                 type: boolean
               interfaceAddr:
                 type: string
@@ -679,7 +664,7 @@ spec:
         - --leader-elect
         command:
         - /manager
-        image: shenzuzhenwang/kubeovn-multivpc:alpha
+        image: ghcr.io/shenzuzhenwang/kubeovn-multivpc:latest
         livenessProbe:
           httpGet:
             path: /healthz

@@ -40,17 +40,12 @@ spec:
             description: VpcDnsForwardSpec defines the desired state of VpcDnsForward
             properties:
               vpc:
-                description: Foo is an example field of VpcDnsForward. Edit vpcdnsforward_types.go
-                  to remove/update
                 type: string
             type: object
           status:
             description: VpcDnsForwardStatus defines the observed state of VpcDnsForward
             properties:
               initialized:
-                description: |-
-                  INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-                  Important: Run "make" to regenerate code after modifying this file
                 type: boolean
             type: object
         type: object

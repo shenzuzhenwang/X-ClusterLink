@@ -23,6 +23,7 @@ metadata:
   namespace: kube-system
 spec:
   externalip: 172.50.16.99
+  globalnetcidr: 242.1.0.0/16
 ```
 
 
