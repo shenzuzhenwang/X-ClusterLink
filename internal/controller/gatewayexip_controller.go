@@ -124,7 +124,7 @@ func RefreshGatewayExIp(syncerConfig broker.SyncerConfig, clusterID string) erro
 	for _, pod := range podList.Items {
 		gatewayExIp := &kubeovnv1.GatewayExIp{}
 		gatewayExIp.Spec.ExternalIP = pod.ObjectMeta.GetObjectMeta().GetAnnotations()["ovn-vpc-external-network.kube-system.kubernetes.io/ip_address"]
-		gatewayExIp.Name = pod.Name[11:len(pod.Name)-2] + "/" + clusterID
+		gatewayExIp.Name = pod.Name[11:len(pod.Name)-2] + "." + clusterID
 		gatewayExIp.Namespace = pod.Namespace
 		gatewayExIp.Spec.GlobalNetCIDR = submarinerCluster.Spec.GlobalCIDR[0]
 		_, err = syncerConfig.LocalClient.Resource(schema.GroupVersionResource{
@@ -230,7 +230,7 @@ func (c *Controller) onRemoteGatewayExIp(obj runtime.Object, _ int, op syncer.Op
 // Broker 成功同步到 local 后执行的操作
 func (c *Controller) onRemoteGatewayExIpSynced(obj runtime.Object, op syncer.Operation) bool {
 	gatewayExIp := obj.(*kubeovnv1.GatewayExIp)
-	parts := strings.Split(gatewayExIp.Namespace, "/")
+	parts := strings.Split(gatewayExIp.Namespace, ".")
 	options := metav1.ListOptions{
 		LabelSelector: fmt.Sprintf("spec.clusterId=%s,spec.gatewayId=%s", parts[1], parts[0]),
 	}

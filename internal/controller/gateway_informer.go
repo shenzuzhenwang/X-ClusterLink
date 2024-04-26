@@ -83,7 +83,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 					return
 				}
 				err = r.Client.Get(ctx, client.ObjectKey{
-					Name:      natGw + "-" + r.ClusterId,
+					Name:      natGw + "." + r.ClusterId,
 					Namespace: "kube-system",
 				}, gatewayExIp)
 				if err != nil {
@@ -141,7 +141,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				// 更新 Vpc-Gateway 对应的 GatewayExIp
 				gatewayExIp := &kubeovnv1.GatewayExIp{}
 				err := r.Client.Get(ctx, client.ObjectKey{
-					Name:      natGw + "-" + r.ClusterId,
+					Name:      natGw + "." + r.ClusterId,
 					Namespace: "kube-system",
 				}, gatewayExIp)
 				if err != nil {
@@ -215,7 +215,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 			// 删除 Vpc-Gateway 对应的 GatewayExIp
 			gatewayExIp := &kubeovnv1.GatewayExIp{}
 			err := r.Client.Get(ctx, client.ObjectKey{
-				Name:      natGw + "-" + r.ClusterId,
+				Name:      natGw + "." + r.ClusterId,
 				Namespace: "kube-system",
 			}, gatewayExIp)
 			if err != nil {
