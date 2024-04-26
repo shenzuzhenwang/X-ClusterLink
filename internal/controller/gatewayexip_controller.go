@@ -19,6 +19,12 @@ package controller
 import (
 	"context"
 	"fmt"
+	kubeovnv1 "kubeovn-multivpc/api/v1"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/pkg/errors"
 	"github.com/submariner-io/admiral/pkg/syncer"
 	"github.com/submariner-io/admiral/pkg/syncer/broker"
@@ -32,13 +38,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/klog/v2"
-	kubeovnv1 "kubeovn-multivpc/api/v1"
-	"os"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"strconv"
-	"strings"
-	"time"
 )
 
 //+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips,verbs=get;list;watch;create;update;patch;delete
@@ -98,6 +98,7 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 	// 遍历所有 Vpc-Gateway 获取 ip 生成 GatewayExIp
 	clientSet, err := kubernetes.NewForConfig(syncerConfig.LocalRestConfig)
 	if err != nil {
+		log.Log.Error(err, "Error create client")
 		return nil
 	}
 	labelSelector := labels.Set{
@@ -108,7 +109,7 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 	}
 	podList, err := clientSet.CoreV1().Pods("kube-system").List(context.Background(), options)
 	if err != nil {
-		klog.Info(err)
+		log.Log.Error(err, "Error get pods")
 		return nil
 	}
 	// 找到本集群的GlobalNetCIDR
@@ -119,6 +120,7 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 		Resource: "clusters",
 	}).Namespace("submariner-operator").Get(context.Background(), c.clusterID, metav1.GetOptions{})
 	if err != nil {
+		log.Log.Error(err, "Error get gw pod")
 		return nil
 	}
 	utilruntime.Must(syncerConfig.Scheme.Convert(clusterObj, submarinerCluster, nil))
@@ -142,6 +144,9 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 				Version:  "v1",
 				Resource: "gatewayexips",
 			}).Namespace(gatewayExIp.Namespace).Update(context.TODO(), obj, metav1.UpdateOptions{})
+			if err != nil {
+				log.Log.Error(err, "Error update gatewayexips")
+			}
 		} else {
 			// GatewatExIp 不存在, 进行创建
 			_, err = syncerConfig.LocalClient.Resource(schema.GroupVersionResource{
@@ -149,6 +154,9 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 				Version:  "v1",
 				Resource: "gatewayexips",
 			}).Namespace(gatewayExIp.Namespace).Create(context.TODO(), obj, metav1.CreateOptions{})
+			if err != nil {
+				log.Log.Error(err, "Error create gatewayexips")
+			}
 		}
 	}
 	// 配置 Syncer
@@ -223,6 +231,7 @@ func (c *Controller) onRemoteGatewayExIpSynced(obj runtime.Object, op syncer.Ope
 		Resource: "vpcnattunnels",
 	}).List(context.Background(), options)
 	if err != nil {
+		log.Log.Error(err, "Error get vpctunnels")
 		return false
 	}
 	utilruntime.Must(c.scheme.Convert(objList, vpcNatTunnelList, nil))
@@ -235,6 +244,10 @@ func (c *Controller) onRemoteGatewayExIpSynced(obj runtime.Object, op syncer.Ope
 			Version:  "v1",
 			Resource: "vpcnattunnels",
 		}).Update(context.Background(), data, metav1.UpdateOptions{})
+		if err != nil {
+			log.Log.Error(err, "Error update vpctunnels")
+			return false
+		}
 	}
 	return false
 }
