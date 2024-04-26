@@ -19,13 +19,14 @@ package controller
 import (
 	"context"
 	"fmt"
+	"k8s.io/apimachinery/pkg/api/errors"
 	kubeovnv1 "kubeovn-multivpc/api/v1"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/pkg/errors"
+	pkgError "github.com/pkg/errors"
 	"github.com/submariner-io/admiral/pkg/syncer"
 	"github.com/submariner-io/admiral/pkg/syncer/broker"
 	submarinerv1alpha1 "github.com/submariner-io/submariner-operator/api/v1alpha1"
@@ -134,7 +135,20 @@ func RefreshGatewayExIp(syncerConfig broker.SyncerConfig, clusterID string) erro
 		}).Get(context.Background(), gatewayExIp.Name, metav1.GetOptions{})
 		obj := &unstructured.Unstructured{}
 		utilruntime.Must(syncerConfig.Scheme.Convert(gatewayExIp, obj, nil))
-		if err == nil {
+		if err != nil {
+			if errors.IsNotFound(err) {
+				// GatewatExIp 不存在, 进行创建
+				_, err = syncerConfig.LocalClient.Resource(schema.GroupVersionResource{
+					Group:    "kubeovn.ustc.io",
+					Version:  "v1",
+					Resource: "gatewayexips",
+				}).Namespace(gatewayExIp.Namespace).Create(context.TODO(), obj, metav1.CreateOptions{})
+				if err != nil {
+					log.Log.Error(err, "Error create gatewayexips")
+					return err
+				}
+			}
+		} else {
 			// GatewatExIp 存在, 进行更新
 			_, err = syncerConfig.LocalClient.Resource(schema.GroupVersionResource{
 				Group:    "kubeovn.ustc.io",
@@ -143,17 +157,6 @@ func RefreshGatewayExIp(syncerConfig broker.SyncerConfig, clusterID string) erro
 			}).Namespace(gatewayExIp.Namespace).Update(context.TODO(), obj, metav1.UpdateOptions{})
 			if err != nil {
 				log.Log.Error(err, "Error update gatewayexips")
-				return err
-			}
-		} else {
-			// GatewatExIp 不存在, 进行创建
-			_, err = syncerConfig.LocalClient.Resource(schema.GroupVersionResource{
-				Group:    "kubeovn.ustc.io",
-				Version:  "v1",
-				Resource: "gatewayexips",
-			}).Namespace(gatewayExIp.Namespace).Create(context.TODO(), obj, metav1.CreateOptions{})
-			if err != nil {
-				log.Log.Error(err, "Error create gatewayexips")
 				return err
 			}
 		}
@@ -198,7 +201,7 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 func (c *Controller) Start(ctx context.Context) error {
 	stopCh := ctx.Done()
 	if err := c.syncer.Start(stopCh); err != nil {
-		return errors.Wrap(err, "error starting syncer")
+		return pkgError.Wrap(err, "error starting syncer")
 	}
 	log.Log.Info("Agent controller started")
 	return nil

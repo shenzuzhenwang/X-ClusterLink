@@ -3,10 +3,10 @@ package controller
 import (
 	"context"
 	"fmt"
+	Submariner "github.com/submariner-io/submariner/pkg/apis/submariner.io/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	kubeovnv1 "kubeovn-multivpc/api/v1"
 	"strings"
-
-	Submariner "github.com/submariner-io/submariner/pkg/apis/submariner.io/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -86,31 +86,33 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 					Name:      natGw + "-" + r.ClusterId,
 					Namespace: "kube-system",
 				}, gatewayExIp)
-				if err == nil {
+				if err != nil {
+					if errors.IsNotFound(err) {
+						// 找到本集群的GlobalNetCIDR
+						submarinerCluster := &Submariner.Cluster{}
+						err := r.Client.Get(ctx, client.ObjectKey{
+							Namespace: "submariner-operator",
+							Name:      r.ClusterId,
+						}, submarinerCluster)
+						if err != nil {
+							log.Log.Error(err, "Error get submarinerCluster")
+							return
+						}
+						gatewayExIp.Spec.ExternalIP = pod.ObjectMeta.GetObjectMeta().GetAnnotations()["ovn-vpc-external-network.kube-system.kubernetes.io/ip_address"]
+						gatewayExIp.Name = natGw + "-" + r.ClusterId
+						gatewayExIp.Namespace = pod.Namespace
+						gatewayExIp.Spec.GlobalNetCIDR = submarinerCluster.Spec.GlobalCIDR[0]
+						err = r.Client.Create(ctx, gatewayExIp)
+						if err != nil {
+							log.Log.Error(err, "Error create gatewayExIp")
+							return
+						}
+					}
+				} else {
 					gatewayExIp.Spec.ExternalIP = pod.ObjectMeta.GetObjectMeta().GetAnnotations()["ovn-vpc-external-network.kube-system.kubernetes.io/ip_address"]
 					err = r.Client.Update(ctx, gatewayExIp)
 					if err != nil {
 						log.Log.Error(err, "Error update gatewayExIp")
-						return
-					}
-				} else {
-					// 找到本集群的GlobalNetCIDR
-					submarinerCluster := &Submariner.Cluster{}
-					err := r.Client.Get(ctx, client.ObjectKey{
-						Namespace: "submariner-operator",
-						Name:      r.ClusterId,
-					}, submarinerCluster)
-					if err != nil {
-						log.Log.Error(err, "Error get submarinerCluster")
-						return
-					}
-					gatewayExIp.Spec.ExternalIP = pod.ObjectMeta.GetObjectMeta().GetAnnotations()["ovn-vpc-external-network.kube-system.kubernetes.io/ip_address"]
-					gatewayExIp.Name = natGw + "-" + r.ClusterId
-					gatewayExIp.Namespace = pod.Namespace
-					gatewayExIp.Spec.GlobalNetCIDR = submarinerCluster.Spec.GlobalCIDR[0]
-					err = r.Client.Create(ctx, gatewayExIp)
-					if err != nil {
-						log.Log.Error(err, "Error create gatewayExIp")
 						return
 					}
 				}
