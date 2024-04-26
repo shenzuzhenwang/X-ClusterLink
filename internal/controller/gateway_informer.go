@@ -25,8 +25,8 @@ type GatewayInformer struct {
 	Tunnelr   *VpcNatTunnelReconciler
 }
 
-func NewInformer(client client.Client, config *rest.Config, re *VpcNatTunnelReconciler) *GatewayInformer {
-	return &GatewayInformer{Client: client, Config: config, Tunnelr: re}
+func NewInformer(clusterId string, client client.Client, config *rest.Config, re *VpcNatTunnelReconciler) *GatewayInformer {
+	return &GatewayInformer{ClusterId: clusterId, Client: client, Config: config, Tunnelr: re}
 }
 
 func (r *GatewayInformer) Start(ctx context.Context) error {
@@ -72,24 +72,25 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 			if statefulSet.Status.AvailableReplicas == 1 {
 				// 创建 Vpc-Gateway 对应的 GatewayExIp
 				gatewayExIp := &kubeovnv1.GatewayExIp{}
-				err := r.Client.Get(ctx, client.ObjectKey{
+				pod, err := r.Tunnelr.getNatGwPod(natGw)
+				err = r.Client.Get(ctx, client.ObjectKey{
 					Name:      natGw + "-" + r.ClusterId,
 					Namespace: "kube-system",
 				}, gatewayExIp)
-				if err != nil {
-					klog.Info(err)
-				}
-				pod, err := r.Tunnelr.getNatGwPod(natGw)
-				if err != nil {
-					klog.Info(err)
-				}
-				gatewayExIp.Spec.ExternalIP = pod.ObjectMeta.GetObjectMeta().GetAnnotations()["ovn-vpc-external-network.kube-system.kubernetes.io/ip_address"]
-				gatewayExIp.Name = natGw + "-" + r.ClusterId
-				gatewayExIp.Namespace = pod.Namespace
-				gatewayExIp.Status.ExternalIP = gatewayExIp.Spec.ExternalIP
-				err = r.Client.Create(ctx, gatewayExIp)
-				if err != nil {
-					klog.Info(err)
+				if err == nil {
+					gatewayExIp.Spec.ExternalIP = pod.ObjectMeta.GetObjectMeta().GetAnnotations()["ovn-vpc-external-network.kube-system.kubernetes.io/ip_address"]
+					err = r.Client.Update(ctx, gatewayExIp)
+					if err != nil {
+						klog.Info(err)
+					}
+				} else {
+					gatewayExIp.Spec.ExternalIP = pod.ObjectMeta.GetObjectMeta().GetAnnotations()["ovn-vpc-external-network.kube-system.kubernetes.io/ip_address"]
+					gatewayExIp.Name = natGw + "-" + r.ClusterId
+					gatewayExIp.Namespace = pod.Namespace
+					err = r.Client.Create(ctx, gatewayExIp)
+					if err != nil {
+						klog.Info(err)
+					}
 				}
 			}
 		},

@@ -93,12 +93,6 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	// if the enable-http2 flag is false (the default), http/2 should be disabled
-	// due to its vulnerabilities. More specifically, disabling http/2 will
-	// prevent from being vulnerable to the HTTP/2 Stream Cancelation and
-	// Rapid Reset CVEs. For more information see:
-	// - https://github.com/advisories/GHSA-qppj-fm5r-hxr3
-	// - https://github.com/advisories/GHSA-4374-p667-p6c8
 	disableHTTP2 := func(c *tls.Config) {
 		setupLog.Info("disabling http/2")
 		c.NextProtos = []string{"http/1.1"}
@@ -154,11 +148,6 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "GatewayExIp")
 		os.Exit(1)
 	}
-	// Gateway Informer
-	if err := mgr.Add(controller.NewInformer(mgr.GetClient(), mgr.GetConfig(), vpcNatTunnelReconciler)); err != nil {
-		setupLog.Error(err, "unable to set up gateway informer")
-		os.Exit(1)
-	}
 
 	/************/
 	// 创建config
@@ -198,6 +187,12 @@ func main() {
 		os.Exit(1)
 	}
 	/************/
+
+	// Gateway Informer
+	if err := mgr.Add(controller.NewInformer(agentSpec.ClusterID, mgr.GetClient(), mgr.GetConfig(), vpcNatTunnelReconciler)); err != nil {
+		setupLog.Error(err, "unable to set up gateway informer")
+		os.Exit(1)
+	}
 
 	//+kubebuilder:scaffold:builder
 

@@ -154,7 +154,6 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 		gatewayExIp.Spec.ExternalIP = pod.ObjectMeta.GetObjectMeta().GetAnnotations()["ovn-vpc-external-network.kube-system.kubernetes.io/ip_address"]
 		gatewayExIp.Name = pod.Name[11:len(pod.Name)-2] + "-" + c.clusterID
 		gatewayExIp.Namespace = pod.Namespace
-		gatewayExIp.Status.ExternalIP = gatewayExIp.Spec.ExternalIP
 		_, err := syncerConfig.LocalClient.Resource(schema.GroupVersionResource{
 			Group:    "kubeovn.ustc.io",
 			Version:  "v1",

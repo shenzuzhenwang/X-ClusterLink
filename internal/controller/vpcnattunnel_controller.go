@@ -60,8 +60,6 @@ type VpcNatTunnelReconciler struct {
 
 func (r *VpcNatTunnelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = log.FromContext(ctx)
-
-	// TODO(user): your logic here
 	vpcTunnel := &kubeovnv1.VpcNatTunnel{}
 	err := r.Get(ctx, req.NamespacedName, vpcTunnel)
 	if err != nil {
@@ -113,7 +111,6 @@ func (r *VpcNatTunnelReconciler) execCommandInPod(podName, namespace, containerN
 	if err != nil {
 		return err
 	}
-	// return strings.TrimSpace(stdout.String()), strings.TrimSpace(stderr.String()), err
 	if strings.TrimSpace(stderr.String()) != "" {
 		return fmt.Errorf(strings.TrimSpace(stderr.String()))
 	}
@@ -213,7 +210,6 @@ func genGlobalnetRoute(GlobalnetCIDR string, ovnGwIP string, RemoteGlobalnetCIDR
 	// 创建snat，将跨集群流量数据包源地址修改为ClusterGlobalEgressIP(globalnet cidr前8个)
 	SNAT := fmt.Sprintf("iptables -t nat -A POSTROUTING -d %s -j SNAT --to-source %s-%s", RemoteGlobalnetCIDR, GlobalEgressIP[0], GlobalEgressIP[len(GlobalEgressIP)-1])
 	return InFlowRoute + ";" + OutFlowRoute + ";" + SNAT
-	// return InFlowRoute
 }
 
 func genDelGlobalnetRoute(GlobalnetCIDR string, ovnGwIP string, RemoteGlobalnetCIDR string, tunnelName string, GlobalEgressIP []string) string {
