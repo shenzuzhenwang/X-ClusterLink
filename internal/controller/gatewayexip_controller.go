@@ -230,7 +230,7 @@ func (c *Controller) onRemoteGatewayExIpSynced(obj runtime.Object, op syncer.Ope
 	gatewayExIp := obj.(*kubeovnv1.GatewayExIp)
 	fieldSelector := fields.Selector(
 		fields.ParseSelectorOrDie(
-			fmt.Sprintf("spec.clusterId=%s,spec.gatewayId=%s", strings.TrimSuffix(gatewayExIp.Name, fmt.Sprintf("-%s", c.clusterID)), c.clusterID),
+			fmt.Sprintf("spec.ClusterId=%s,spec.GatewayId=%s", strings.TrimSuffix(gatewayExIp.Name, fmt.Sprintf("-%s", c.clusterID)), c.clusterID),
 		),
 	)
 	options := metav1.ListOptions{
