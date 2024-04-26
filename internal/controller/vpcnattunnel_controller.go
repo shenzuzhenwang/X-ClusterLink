@@ -293,8 +293,13 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 		vpcTunnel.Status.InterfaceAddr = vpcTunnel.Spec.InterfaceAddr
 		vpcTunnel.Status.NatGwDp = vpcTunnel.Spec.NatGwDp
 		vpcTunnel.Status.Type = vpcTunnel.Spec.Type
-		vpcTunnel.Labels["remoteCluster"] = vpcTunnel.Spec.ClusterId
-		vpcTunnel.Labels["remoteGateway"] = vpcTunnel.Spec.GatewayId
+		labels := vpcTunnel.GetLabels()
+		if labels == nil {
+			labels = make(map[string]string)
+		}
+		labels["remoteCluster"] = vpcTunnel.Spec.ClusterId
+		labels["remoteGateway"] = vpcTunnel.Spec.GatewayId
+		vpcTunnel.Labels = labels
 		r.Status().Update(ctx, vpcTunnel)
 
 	} else if vpcTunnel.Status.Initialized && (vpcTunnel.Status.RemoteIP != gatewayExIp.Spec.ExternalIP || vpcTunnel.Status.InterfaceAddr != vpcTunnel.Spec.InterfaceAddr ||
