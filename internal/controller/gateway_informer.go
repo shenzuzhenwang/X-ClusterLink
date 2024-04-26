@@ -76,6 +76,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 					Namespace: "kube-system",
 				}, gatewayExIp)
 				if err != nil {
+					// 错误为没有找到资源，则进行创建
 					if errors.IsNotFound(err) {
 						// 找到本集群的GlobalNetCIDR
 						submarinerCluster := &Submariner.Cluster{}
@@ -98,6 +99,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 						}
 					}
 				} else {
+					// 资源找到，则进行更新
 					gatewayExIp.Spec.ExternalIP = pod.ObjectMeta.GetObjectMeta().GetAnnotations()["ovn-vpc-external-network.kube-system.kubernetes.io/ip_address"]
 					err = r.Client.Update(ctx, gatewayExIp)
 					if err != nil {

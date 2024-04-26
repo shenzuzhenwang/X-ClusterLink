@@ -299,7 +299,7 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 		}
 		labels["remoteCluster"] = vpcTunnel.Spec.ClusterId
 		labels["remoteGateway"] = vpcTunnel.Spec.GatewayId
-		vpcTunnel.SetLabels(labels)
+		vpcTunnel.Labels = labels
 		r.Status().Update(ctx, vpcTunnel)
 
 	} else if vpcTunnel.Status.Initialized && (vpcTunnel.Status.RemoteIP != gatewayExIp.Spec.ExternalIP || vpcTunnel.Status.InterfaceAddr != vpcTunnel.Spec.InterfaceAddr ||
