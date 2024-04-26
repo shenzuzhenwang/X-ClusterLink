@@ -152,7 +152,7 @@ func (c *Controller) onRemoteGatewayExIpSynced(obj runtime.Object, op syncer.Ope
 	gatewayId := gatewayExIp.GetObjectMeta().GetLabels()["submariner-io/originatingNamespace"]
 	clusterId := gatewayExIp.GetObjectMeta().GetLabels()["submariner-io/clusterID"]
 	options := metav1.ListOptions{
-		FieldSelector: fmt.Sprintf("spec.clusterId=%s,spec.gatewayId=%s", clusterId, gatewayId),
+		LabelSelector: fmt.Sprintf("remoteCluster=%s,remoteGateway=%s", clusterId, gatewayId),
 	}
 	vpcNatTunnelList := &kubeovnv1.VpcNatTunnelList{}
 	objList, err := c.syncer.GetLocalClient().Resource(schema.GroupVersionResource{

@@ -237,7 +237,7 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 	// 获取 GatewayExIp
 	gatewayExIp := &kubeovnv1.GatewayExIp{}
 	err := r.Client.Get(ctx, client.ObjectKey{
-		Name:      vpcTunnel.Spec.GatewayId + "-" + vpcTunnel.Spec.ClusterId,
+		Name:      vpcTunnel.Spec.GatewayId + "." + vpcTunnel.Spec.ClusterId,
 		Namespace: "kube-system",
 	}, gatewayExIp)
 	if err != nil {
@@ -293,6 +293,13 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 		vpcTunnel.Status.InterfaceAddr = vpcTunnel.Spec.InterfaceAddr
 		vpcTunnel.Status.NatGwDp = vpcTunnel.Spec.NatGwDp
 		vpcTunnel.Status.Type = vpcTunnel.Spec.Type
+		labels := vpcTunnel.GetLabels()
+		if labels == nil {
+			labels = make(map[string]string)
+		}
+		labels["remoteCluster"] = vpcTunnel.Spec.ClusterId
+		labels["remoteGateway"] = vpcTunnel.Spec.GatewayId
+		vpcTunnel.SetLabels(labels)
 		r.Status().Update(ctx, vpcTunnel)
 
 	} else if vpcTunnel.Status.Initialized && (vpcTunnel.Status.RemoteIP != gatewayExIp.Spec.ExternalIP || vpcTunnel.Status.InterfaceAddr != vpcTunnel.Spec.InterfaceAddr ||
