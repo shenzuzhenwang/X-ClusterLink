@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/klog/v2"
 	kubeovnv1 "kubeovn-multivpc/api/v1"
 	"os"
 	"strconv"
@@ -33,7 +34,6 @@ import (
 	Submariner "github.com/submariner-io/submariner/pkg/apis/submariner.io/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -231,14 +231,11 @@ func (c *Controller) onRemoteGatewayExIp(obj runtime.Object, _ int, op syncer.Op
 // Broker 成功同步到 local 后执行的操作
 func (c *Controller) onRemoteGatewayExIpSynced(obj runtime.Object, op syncer.Operation) bool {
 	gatewayExIp := obj.(*kubeovnv1.GatewayExIp)
-	fieldSelector := fields.Selector(
-		fields.ParseSelectorOrDie(
-			fmt.Sprintf("spec.ClusterId=%s,spec.GatewayId=%s", strings.TrimSuffix(gatewayExIp.Name, fmt.Sprintf("-%s", c.clusterID)), c.clusterID),
-		),
-	)
 	options := metav1.ListOptions{
-		FieldSelector: fieldSelector.String(),
+		FieldSelector: fmt.Sprintf("spec.clusterId=%s,spec.gatewayId=%s", strings.TrimSuffix(gatewayExIp.Name, fmt.Sprintf("-%s", c.clusterID)), c.clusterID),
 	}
+	klog.Info(strings.TrimSuffix(gatewayExIp.Name, fmt.Sprintf("-%s", c.clusterID)))
+	klog.Info(fmt.Sprintf("spec.clusterId=%s,spec.gatewayId=%s", strings.TrimSuffix(gatewayExIp.Name, fmt.Sprintf("-%s", c.clusterID))))
 	vpcNatTunnelList := &kubeovnv1.VpcNatTunnelList{}
 	objList, err := c.syncer.GetLocalClient().Resource(schema.GroupVersionResource{
 		Group:    "kubeovn.ustc.io",
