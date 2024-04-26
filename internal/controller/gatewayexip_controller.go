@@ -131,12 +131,12 @@ func RefreshGatewayExIp(syncerConfig broker.SyncerConfig, clusterID string) erro
 			Group:    "kubeovn.ustc.io",
 			Version:  "v1",
 			Resource: "gatewayexips",
-		}).Get(context.Background(), gatewayExIp.Name, metav1.GetOptions{})
+		}).Namespace(gatewayExIp.Namespace).Get(context.Background(), gatewayExIp.Name, metav1.GetOptions{})
 		obj := &unstructured.Unstructured{}
 		utilruntime.Must(syncerConfig.Scheme.Convert(gatewayExIp, obj, nil))
 		if err != nil {
 			if errors.IsNotFound(err) {
-				// GatewatExIp 不存在, 进行创建
+				// GatewayExIp 不存在, 进行创建
 				_, err = syncerConfig.LocalClient.Resource(schema.GroupVersionResource{
 					Group:    "kubeovn.ustc.io",
 					Version:  "v1",
