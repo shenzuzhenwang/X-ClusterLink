@@ -300,7 +300,7 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 		labels["remoteCluster"] = vpcTunnel.Spec.ClusterId
 		labels["remoteGateway"] = vpcTunnel.Spec.GatewayId
 		vpcTunnel.Labels = labels
-		r.Status().Update(ctx, vpcTunnel)
+		r.Update(ctx, vpcTunnel)
 
 	} else if vpcTunnel.Status.Initialized && (vpcTunnel.Status.RemoteIP != gatewayExIp.Spec.ExternalIP || vpcTunnel.Status.InterfaceAddr != vpcTunnel.Spec.InterfaceAddr ||
 		vpcTunnel.Status.NatGwDp != vpcTunnel.Spec.NatGwDp || vpcTunnel.Status.RemoteGlobalnetCIDR != gatewayExIp.Spec.GlobalNetCIDR) {
