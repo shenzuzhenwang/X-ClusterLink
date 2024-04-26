@@ -108,7 +108,6 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 	}
 	podList, err := clientSet.CoreV1().Pods("kube-system").List(context.Background(), options)
 	if err != nil {
-		klog.Info("test")
 		klog.Info(err)
 		return nil
 	}
