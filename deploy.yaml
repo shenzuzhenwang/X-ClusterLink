@@ -55,8 +55,6 @@ spec:
                 type: string
               globalNetCIDR:
                 type: string
-            required:
-            - globalNetCIDR
             type: object
           status:
             description: GatewayExIpStatus defines the observed state of GatewayExIp
