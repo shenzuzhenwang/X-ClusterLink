@@ -8,4 +8,3 @@ spec:
   gatewayId: "gw1"
   interfaceAddr: "10.100.0.1/24" #隧道地址
   natGwDp: "gw1" #vpc网关名字
-  remoteGlobalnetCIDR: "242.0.0.0/16"
