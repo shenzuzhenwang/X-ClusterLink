@@ -148,7 +148,7 @@ func RefreshGatewayExIp(syncerConfig broker.SyncerConfig, clusterID string) erro
 				}
 			}
 		} else {
-			// GatewatExIp 存在, 进行更新
+			// GatewayExIp 存在, 进行更新
 			_, err = syncerConfig.LocalClient.Resource(schema.GroupVersionResource{
 				Group:    "kubeovn.ustc.io",
 				Version:  "v1",
@@ -168,11 +168,12 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 		clusterID: spec.ClusterID,
 		scheme:    syncerConfig.Scheme,
 	}
-	err := RefreshGatewayExIp(syncerConfig, c.clusterID)
-	if err != nil {
-		log.Log.Error(err, "error RefreshGatewayExIp")
-		return nil
-	}
+	var err error
+	//err := RefreshGatewayExIp(syncerConfig, c.clusterID)
+	//if err != nil {
+	//	log.Log.Error(err, "error RefreshGatewayExIp")
+	//	return nil
+	//}
 	// 配置 Syncer
 	syncerConfig.LocalNamespace = metav1.NamespaceAll
 	syncerConfig.LocalClusterID = spec.ClusterID
