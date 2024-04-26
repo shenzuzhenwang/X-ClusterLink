@@ -90,16 +90,12 @@ func InitEnvVars(syncerConf broker.SyncerConfig) error {
 	return nil
 }
 
-func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller {
-	c := &Controller{
-		clusterID: spec.ClusterID,
-		scheme:    syncerConfig.Scheme,
-	}
+func RefreshGatewayExIp(syncerConfig broker.SyncerConfig, clusterID string) error {
 	// 遍历所有 Vpc-Gateway 获取 ip 生成 GatewayExIp
 	clientSet, err := kubernetes.NewForConfig(syncerConfig.LocalRestConfig)
 	if err != nil {
 		log.Log.Error(err, "Error create client")
-		return nil
+		return err
 	}
 	labelSelector := labels.Set{
 		"ovn.kubernetes.io/vpc-nat-gw": "true",
@@ -110,7 +106,7 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 	podList, err := clientSet.CoreV1().Pods("kube-system").List(context.Background(), options)
 	if err != nil {
 		log.Log.Error(err, "Error get pods")
-		return nil
+		return err
 	}
 	// 找到本集群的GlobalNetCIDR
 	submarinerCluster := &Submariner.Cluster{}
@@ -118,16 +114,16 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 		Group:    "submariner.io",
 		Version:  "v1",
 		Resource: "clusters",
-	}).Namespace("submariner-operator").Get(context.Background(), c.clusterID, metav1.GetOptions{})
+	}).Namespace("submariner-operator").Get(context.Background(), clusterID, metav1.GetOptions{})
 	if err != nil {
 		log.Log.Error(err, "Error get gw pod")
-		return nil
+		return err
 	}
 	utilruntime.Must(syncerConfig.Scheme.Convert(clusterObj, submarinerCluster, nil))
 	for _, pod := range podList.Items {
 		gatewayExIp := &kubeovnv1.GatewayExIp{}
 		gatewayExIp.Spec.ExternalIP = pod.ObjectMeta.GetObjectMeta().GetAnnotations()["ovn-vpc-external-network.kube-system.kubernetes.io/ip_address"]
-		gatewayExIp.Name = pod.Name[11:len(pod.Name)-2] + "-" + c.clusterID
+		gatewayExIp.Name = pod.Name[11:len(pod.Name)-2] + "-" + clusterID
 		gatewayExIp.Namespace = pod.Namespace
 		gatewayExIp.Spec.GlobalNetCIDR = submarinerCluster.Spec.GlobalCIDR[0]
 		_, err = syncerConfig.LocalClient.Resource(schema.GroupVersionResource{
@@ -146,6 +142,7 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 			}).Namespace(gatewayExIp.Namespace).Update(context.TODO(), obj, metav1.UpdateOptions{})
 			if err != nil {
 				log.Log.Error(err, "Error update gatewayexips")
+				return err
 			}
 		} else {
 			// GatewatExIp 不存在, 进行创建
@@ -156,8 +153,22 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 			}).Namespace(gatewayExIp.Namespace).Create(context.TODO(), obj, metav1.CreateOptions{})
 			if err != nil {
 				log.Log.Error(err, "Error create gatewayexips")
+				return err
 			}
 		}
+	}
+	return nil
+}
+
+func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller {
+	c := &Controller{
+		clusterID: spec.ClusterID,
+		scheme:    syncerConfig.Scheme,
+	}
+	err := RefreshGatewayExIp(syncerConfig, c.clusterID)
+	if err != nil {
+		log.Log.Error(err, "error RefreshGatewayExIp")
+		return nil
 	}
 	// 配置 Syncer
 	syncerConfig.LocalNamespace = metav1.NamespaceAll
