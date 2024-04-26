@@ -20,22 +20,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // GatewayExIpSpec defines the desired state of GatewayExIp
 type GatewayExIpSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// Foo is an example field of GatewayExIp. Edit gatewayexip_types.go to remove/update
-	ExternalIP string `json:"externalip,omitempty"`
+	ExternalIP    string `json:"externalIp,omitempty"`
+	GlobalNetCIDR string `json:"globalNetCIDR"`
 }
 
 // GatewayExIpStatus defines the observed state of GatewayExIp
 type GatewayExIpStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
 }
 
 //+kubebuilder:object:root=true

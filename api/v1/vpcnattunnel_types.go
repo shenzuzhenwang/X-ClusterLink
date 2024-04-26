@@ -20,9 +20,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // VpcNatTunnelSpec defines the desired state of VpcNatTunnel
 type VpcNatTunnelSpec struct {
 	ClusterId     string `json:"clusterId"`
@@ -31,14 +28,10 @@ type VpcNatTunnelSpec struct {
 	NatGwDp       string `json:"natGwDp"`
 	// +kubebuilder:default="gre"
 	Type string `json:"type"`
-
-	RemoteGlobalnetCIDR string `json:"remoteGlobalnetCIDR"`
 }
 
 // VpcNatTunnelStatus defines the observed state of VpcNatTunnel
 type VpcNatTunnelStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
 	Initialized   bool   `json:"initialized"`
 	InternalIP    string `json:"internalIp"`
 	RemoteIP      string `json:"remoteIp"`

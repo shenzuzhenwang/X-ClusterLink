@@ -244,7 +244,10 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 	}
 
 	if !vpcTunnel.Status.Initialized {
+		// 初始化 remoteIp
 		vpcTunnel.Status.RemoteIP = gatewayExIp.Spec.ExternalIP
+		// 初始化 GlobalNetCIDR
+		vpcTunnel.Status.RemoteGlobalnetCIDR = gatewayExIp.Spec.GlobalNetCIDR
 
 		// add tunnel
 		podnext, err := r.getNatGwPod(vpcTunnel.Spec.NatGwDp) // find pod named Spec.NatGwDp
@@ -279,21 +282,20 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			klog.Info(err)
 			return ctrl.Result{}, err
 		}
-		err = r.execCommandInPod(podnext.Name, podnext.Namespace, "vpc-nat-gw", genGlobalnetRoute(GlobalnetCIDR, ovnGwIP, vpcTunnel.Spec.RemoteGlobalnetCIDR, vpcTunnel.Name, GlobalEgressIP))
+		err = r.execCommandInPod(podnext.Name, podnext.Namespace, "vpc-nat-gw", genGlobalnetRoute(GlobalnetCIDR, ovnGwIP, gatewayExIp.Spec.GlobalNetCIDR, vpcTunnel.Name, GlobalEgressIP))
 		if err != nil {
 			klog.Info(err)
 			return ctrl.Result{}, err
 		}
 
 		vpcTunnel.Status.Initialized = true
-		vpcTunnel.Status.RemoteGlobalnetCIDR = vpcTunnel.Spec.RemoteGlobalnetCIDR
 		vpcTunnel.Status.InterfaceAddr = vpcTunnel.Spec.InterfaceAddr
 		vpcTunnel.Status.NatGwDp = vpcTunnel.Spec.NatGwDp
 		vpcTunnel.Status.Type = vpcTunnel.Spec.Type
 		r.Status().Update(ctx, vpcTunnel)
 
 	} else if vpcTunnel.Status.Initialized && (vpcTunnel.Status.RemoteIP != gatewayExIp.Spec.ExternalIP || vpcTunnel.Status.InterfaceAddr != vpcTunnel.Spec.InterfaceAddr ||
-		vpcTunnel.Status.NatGwDp != vpcTunnel.Spec.NatGwDp || vpcTunnel.Status.RemoteGlobalnetCIDR != vpcTunnel.Spec.RemoteGlobalnetCIDR) {
+		vpcTunnel.Status.NatGwDp != vpcTunnel.Spec.NatGwDp || vpcTunnel.Status.RemoteGlobalnetCIDR != gatewayExIp.Spec.GlobalNetCIDR) {
 		if vpcTunnel.Status.Type != vpcTunnel.Spec.Type {
 			log.Log.Error(errors.New("tunnel type should not change"), fmt.Sprintf("tunnel :%#v\n", vpcTunnel))
 			vpcTunnel.Spec.Type = vpcTunnel.Status.Type
@@ -319,13 +321,13 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			if err != nil {
 				return ctrl.Result{}, err
 			}
-			err = r.execCommandInPod(podnext.Name, podnext.Namespace, "vpc-nat-gw", genGlobalnetRoute(vpcTunnel.Status.GlobalnetCIDR, vpcTunnel.Status.OvnGwIP, vpcTunnel.Spec.RemoteGlobalnetCIDR, vpcTunnel.Name, vpcTunnel.Status.GlobalEgressIP))
+			err = r.execCommandInPod(podnext.Name, podnext.Namespace, "vpc-nat-gw", genGlobalnetRoute(vpcTunnel.Status.GlobalnetCIDR, vpcTunnel.Status.OvnGwIP, gatewayExIp.Spec.GlobalNetCIDR, vpcTunnel.Name, vpcTunnel.Status.GlobalEgressIP))
 			if err != nil {
 				return ctrl.Result{}, err
 			}
 
 			vpcTunnel.Status.RemoteIP = gatewayExIp.Spec.ExternalIP
-			vpcTunnel.Status.RemoteGlobalnetCIDR = vpcTunnel.Spec.RemoteGlobalnetCIDR
+			vpcTunnel.Status.RemoteGlobalnetCIDR = gatewayExIp.Spec.GlobalNetCIDR
 			vpcTunnel.Status.InterfaceAddr = vpcTunnel.Spec.InterfaceAddr
 			vpcTunnel.Status.NatGwDp = vpcTunnel.Spec.NatGwDp
 			r.Status().Update(ctx, vpcTunnel)
@@ -336,7 +338,7 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			if err != nil {
 				return ctrl.Result{}, err
 			}
-			err = r.execCommandInPod(podlast.Name, podlast.Namespace, "vpc-nat-gw", genDelGlobalnetRoute(vpcTunnel.Status.GlobalnetCIDR, vpcTunnel.Status.OvnGwIP, vpcTunnel.Spec.RemoteGlobalnetCIDR, vpcTunnel.Name, vpcTunnel.Status.GlobalEgressIP))
+			err = r.execCommandInPod(podlast.Name, podlast.Namespace, "vpc-nat-gw", genDelGlobalnetRoute(vpcTunnel.Status.GlobalnetCIDR, vpcTunnel.Status.OvnGwIP, gatewayExIp.Spec.GlobalNetCIDR, vpcTunnel.Name, vpcTunnel.Status.GlobalEgressIP))
 			if err != nil {
 				return ctrl.Result{}, err
 			}
@@ -376,13 +378,13 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			if err != nil {
 				return ctrl.Result{}, err
 			}
-			err = r.execCommandInPod(podnext.Name, podnext.Namespace, "vpc-nat-gw", genGlobalnetRoute(GlobalnetCIDR, ovnGwIP, vpcTunnel.Spec.RemoteGlobalnetCIDR, vpcTunnel.Name, GlobalEgressIP))
+			err = r.execCommandInPod(podnext.Name, podnext.Namespace, "vpc-nat-gw", genGlobalnetRoute(GlobalnetCIDR, ovnGwIP, gatewayExIp.Spec.GlobalNetCIDR, vpcTunnel.Name, GlobalEgressIP))
 			if err != nil {
 				return ctrl.Result{}, err
 			}
 
 			vpcTunnel.Status.RemoteIP = gatewayExIp.Spec.ExternalIP
-			vpcTunnel.Status.RemoteGlobalnetCIDR = vpcTunnel.Spec.RemoteGlobalnetCIDR
+			vpcTunnel.Status.RemoteGlobalnetCIDR = gatewayExIp.Spec.GlobalNetCIDR
 			vpcTunnel.Status.InterfaceAddr = vpcTunnel.Spec.InterfaceAddr
 			vpcTunnel.Status.NatGwDp = vpcTunnel.Spec.NatGwDp
 			r.Status().Update(ctx, vpcTunnel)

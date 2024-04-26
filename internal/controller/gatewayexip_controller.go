@@ -19,26 +19,26 @@ package controller
 import (
 	"context"
 	"fmt"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/klog/v2"
-	kubeovnv1 "kubeovn-multivpc/api/v1"
-	"os"
-	"strconv"
-	"strings"
-	"time"
-
 	"github.com/pkg/errors"
 	"github.com/submariner-io/admiral/pkg/syncer"
 	"github.com/submariner-io/admiral/pkg/syncer/broker"
 	submarinerv1alpha1 "github.com/submariner-io/submariner-operator/api/v1alpha1"
+	Submariner "github.com/submariner-io/submariner/pkg/apis/submariner.io/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/klog/v2"
+	kubeovnv1 "kubeovn-multivpc/api/v1"
+	"os"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"strconv"
+	"strings"
+	"time"
 )
 
 //+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips,verbs=get;list;watch;create;update;patch;delete
@@ -111,12 +111,24 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 		klog.Info(err)
 		return nil
 	}
+	// 找到本集群的GlobalNetCIDR
+	submarinerCluster := &Submariner.Cluster{}
+	clusterObj, err := syncerConfig.LocalClient.Resource(schema.GroupVersionResource{
+		Group:    "submariner.io",
+		Version:  "v1",
+		Resource: "clusters",
+	}).Namespace("submariner-operator").Get(context.Background(), c.clusterID, metav1.GetOptions{})
+	if err != nil {
+		return nil
+	}
+	utilruntime.Must(syncerConfig.Scheme.Convert(clusterObj, submarinerCluster, nil))
 	for _, pod := range podList.Items {
 		gatewayExIp := &kubeovnv1.GatewayExIp{}
 		gatewayExIp.Spec.ExternalIP = pod.ObjectMeta.GetObjectMeta().GetAnnotations()["ovn-vpc-external-network.kube-system.kubernetes.io/ip_address"]
 		gatewayExIp.Name = pod.Name[11:len(pod.Name)-2] + "-" + c.clusterID
 		gatewayExIp.Namespace = pod.Namespace
-		_, err := syncerConfig.LocalClient.Resource(schema.GroupVersionResource{
+		gatewayExIp.Spec.GlobalNetCIDR = submarinerCluster.Spec.GlobalCIDR[0]
+		_, err = syncerConfig.LocalClient.Resource(schema.GroupVersionResource{
 			Group:    "kubeovn.ustc.io",
 			Version:  "v1",
 			Resource: "gatewayexips",

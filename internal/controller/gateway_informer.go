@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	Submariner "github.com/submariner-io/submariner/pkg/apis/submariner.io/v1"
 	kubeovnv1 "kubeovn-multivpc/api/v1"
 	"strings"
 
@@ -84,9 +85,19 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 						klog.Info(err)
 					}
 				} else {
+					// 找到本集群的GlobalNetCIDR
+					submarinerCluster := &Submariner.Cluster{}
+					err := r.Client.Get(ctx, client.ObjectKey{
+						Namespace: "submariner-operator",
+						Name:      r.ClusterId,
+					}, submarinerCluster)
+					if err != nil {
+						klog.Info(err)
+					}
 					gatewayExIp.Spec.ExternalIP = pod.ObjectMeta.GetObjectMeta().GetAnnotations()["ovn-vpc-external-network.kube-system.kubernetes.io/ip_address"]
 					gatewayExIp.Name = natGw + "-" + r.ClusterId
 					gatewayExIp.Namespace = pod.Namespace
+					gatewayExIp.Spec.GlobalNetCIDR = submarinerCluster.Spec.GlobalCIDR[0]
 					err = r.Client.Create(ctx, gatewayExIp)
 					if err != nil {
 						klog.Info(err)

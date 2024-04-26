@@ -62,7 +62,6 @@ spec:
   gatewayId: "gw1"    # 互联的对端集群 vpc-gw 名字
   interfaceAddr: "10.100.0.1/24" #隧道地址
   natGwDp: "gw1" #本集群 vpc-gw 名字
-  remoteGlobalnetCIDR: "242.0.0.0/16"
 ```
 
 ```sh

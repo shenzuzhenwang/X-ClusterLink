@@ -20,22 +20,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // VpcDnsForwardSpec defines the desired state of VpcDnsForward
 type VpcDnsForwardSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// Foo is an example field of VpcDnsForward. Edit vpcdnsforward_types.go to remove/update
 	Vpc string `json:"vpc,omitempty"`
 }
 
 // VpcDnsForwardStatus defines the observed state of VpcDnsForward
 type VpcDnsForwardStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
 	Initialized bool `json:"initialized,omitempty"`
 }
 
