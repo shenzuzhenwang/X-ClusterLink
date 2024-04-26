@@ -99,7 +99,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 							return
 						}
 						gatewayExIp.Spec.ExternalIP = pod.ObjectMeta.GetObjectMeta().GetAnnotations()["ovn-vpc-external-network.kube-system.kubernetes.io/ip_address"]
-						gatewayExIp.Name = natGw + "/" + r.ClusterId
+						gatewayExIp.Name = natGw + "." + r.ClusterId
 						gatewayExIp.Namespace = pod.Namespace
 						gatewayExIp.Spec.GlobalNetCIDR = submarinerCluster.Spec.GlobalCIDR[0]
 						err = r.Client.Create(ctx, gatewayExIp)
