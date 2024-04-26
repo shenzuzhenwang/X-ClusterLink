@@ -19,25 +19,20 @@ package controller
 import (
 	"context"
 	"fmt"
-	"k8s.io/apimachinery/pkg/api/errors"
 	kubeovnv1 "kubeovn-multivpc/api/v1"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	pkgError "github.com/pkg/errors"
 	"github.com/submariner-io/admiral/pkg/syncer"
 	"github.com/submariner-io/admiral/pkg/syncer/broker"
 	submarinerv1alpha1 "github.com/submariner-io/submariner-operator/api/v1alpha1"
-	Submariner "github.com/submariner-io/submariner/pkg/apis/submariner.io/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -91,89 +86,12 @@ func InitEnvVars(syncerConf broker.SyncerConfig) error {
 	return nil
 }
 
-func RefreshGatewayExIp(syncerConfig broker.SyncerConfig, clusterID string) error {
-	// 遍历所有 Vpc-Gateway 获取 ip 生成 GatewayExIp
-	clientSet, err := kubernetes.NewForConfig(syncerConfig.LocalRestConfig)
-	if err != nil {
-		log.Log.Error(err, "Error create client")
-		return err
-	}
-	labelSelector := labels.Set{
-		"ovn.kubernetes.io/vpc-nat-gw": "true",
-	}
-	options := metav1.ListOptions{
-		LabelSelector: labelSelector.String(),
-	}
-	podList, err := clientSet.CoreV1().Pods("kube-system").List(context.Background(), options)
-	if err != nil {
-		log.Log.Error(err, "Error get pods")
-		return err
-	}
-	// 找到本集群的GlobalNetCIDR
-	submarinerCluster := &Submariner.Cluster{}
-	clusterObj, err := syncerConfig.LocalClient.Resource(schema.GroupVersionResource{
-		Group:    "submariner.io",
-		Version:  "v1",
-		Resource: "clusters",
-	}).Namespace("submariner-operator").Get(context.Background(), clusterID, metav1.GetOptions{})
-	if err != nil {
-		log.Log.Error(err, "Error get gw pod")
-		return err
-	}
-	utilruntime.Must(syncerConfig.Scheme.Convert(clusterObj, submarinerCluster, nil))
-	for _, pod := range podList.Items {
-		gatewayExIp := &kubeovnv1.GatewayExIp{}
-		gatewayExIp.Spec.ExternalIP = pod.ObjectMeta.GetObjectMeta().GetAnnotations()["ovn-vpc-external-network.kube-system.kubernetes.io/ip_address"]
-		gatewayExIp.Name = pod.Name[11:len(pod.Name)-2] + "." + clusterID
-		gatewayExIp.Namespace = pod.Namespace
-		gatewayExIp.Spec.GlobalNetCIDR = submarinerCluster.Spec.GlobalCIDR[0]
-		_, err = syncerConfig.LocalClient.Resource(schema.GroupVersionResource{
-			Group:    "kubeovn.ustc.io",
-			Version:  "v1",
-			Resource: "gatewayexips",
-		}).Namespace(gatewayExIp.Namespace).Get(context.Background(), gatewayExIp.Name, metav1.GetOptions{})
-		obj := &unstructured.Unstructured{}
-		utilruntime.Must(syncerConfig.Scheme.Convert(gatewayExIp, obj, nil))
-		if err != nil {
-			if errors.IsNotFound(err) {
-				// GatewayExIp 不存在, 进行创建
-				_, err = syncerConfig.LocalClient.Resource(schema.GroupVersionResource{
-					Group:    "kubeovn.ustc.io",
-					Version:  "v1",
-					Resource: "gatewayexips",
-				}).Namespace(gatewayExIp.Namespace).Create(context.TODO(), obj, metav1.CreateOptions{})
-				if err != nil {
-					log.Log.Error(err, "Error create gatewayexips")
-					return err
-				}
-			}
-		} else {
-			// GatewayExIp 存在, 进行更新
-			_, err = syncerConfig.LocalClient.Resource(schema.GroupVersionResource{
-				Group:    "kubeovn.ustc.io",
-				Version:  "v1",
-				Resource: "gatewayexips",
-			}).Namespace(gatewayExIp.Namespace).Update(context.TODO(), obj, metav1.UpdateOptions{})
-			if err != nil {
-				log.Log.Error(err, "Error update gatewayexips")
-				return err
-			}
-		}
-	}
-	return nil
-}
-
 func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller {
 	c := &Controller{
 		clusterID: spec.ClusterID,
 		scheme:    syncerConfig.Scheme,
 	}
 	var err error
-	//err := RefreshGatewayExIp(syncerConfig, c.clusterID)
-	//if err != nil {
-	//	log.Log.Error(err, "error RefreshGatewayExIp")
-	//	return nil
-	//}
 	// 配置 Syncer
 	syncerConfig.LocalNamespace = metav1.NamespaceAll
 	syncerConfig.LocalClusterID = spec.ClusterID
@@ -231,9 +149,10 @@ func (c *Controller) onRemoteGatewayExIp(obj runtime.Object, _ int, op syncer.Op
 // Broker 成功同步到 local 后执行的操作
 func (c *Controller) onRemoteGatewayExIpSynced(obj runtime.Object, op syncer.Operation) bool {
 	gatewayExIp := obj.(*kubeovnv1.GatewayExIp)
-	parts := strings.Split(gatewayExIp.Namespace, ".")
+	gatewayId := gatewayExIp.GetObjectMeta().GetLabels()["submariner-io/originatingNamespace"]
+	clusterId := gatewayExIp.GetObjectMeta().GetLabels()["submariner-io/clusterID"]
 	options := metav1.ListOptions{
-		LabelSelector: fmt.Sprintf("spec.clusterId=%s,spec.gatewayId=%s", parts[1], parts[0]),
+		FieldSelector: fmt.Sprintf("spec.clusterId=%s,spec.gatewayId=%s", clusterId, gatewayId),
 	}
 	vpcNatTunnelList := &kubeovnv1.VpcNatTunnelList{}
 	objList, err := c.syncer.GetLocalClient().Resource(schema.GroupVersionResource{
@@ -254,7 +173,7 @@ func (c *Controller) onRemoteGatewayExIpSynced(obj runtime.Object, op syncer.Ope
 			Group:    "kubeovn.ustc.io",
 			Version:  "v1",
 			Resource: "vpcnattunnels",
-		}).Update(context.Background(), data, metav1.UpdateOptions{})
+		}).Namespace(vpcNatTunnel.Namespace).Update(context.Background(), data, metav1.UpdateOptions{})
 		if err != nil {
 			log.Log.Error(err, "Error update vpctunnels")
 			return false
