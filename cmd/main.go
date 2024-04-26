@@ -140,14 +140,6 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "VpcDnsForward")
 		os.Exit(1)
 	}
-	// GatewayExIp Reconciler
-	if err = (&controller.GatewayExIpReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "GatewayExIp")
-		os.Exit(1)
-	}
 
 	/************/
 	// 创建config

@@ -38,8 +38,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -47,41 +45,6 @@ import (
 //+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=kubeovn.ustc.io,resources=gatewayexips/finalizers,verbs=update
 //+kubebuilder:rbac:groups=submariner.io,resources=servicediscoveries,verbs=get;list;watch;create;update;patch;delete
-
-type GatewayExIpReconciler struct {
-	client.Client
-	Scheme *runtime.Scheme
-}
-
-func (r *GatewayExIpReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
-	var gatewayExIp kubeovnv1.GatewayExIp
-	if err := r.Get(ctx, req.NamespacedName, &gatewayExIp); err != nil {
-		log.Log.Error(err, "unable to fetch GatewayExIp")
-		return ctrl.Result{}, client.IgnoreNotFound(err)
-	}
-
-	if !gatewayExIp.ObjectMeta.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, nil
-	}
-
-	// Update the GatewayExIp instance
-	if err := r.Update(ctx, &gatewayExIp); err != nil {
-		log.Log.Error(err, "unable to update GatewayExIp")
-		return ctrl.Result{}, err
-	}
-
-	log.Log.Info("Updated GatewayExIp successfully", "ExternalIP", gatewayExIp.Spec.ExternalIP)
-
-	return ctrl.Result{}, nil
-}
-
-// SetupWithManager sets up the controller with the Manager.
-func (r *GatewayExIpReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&kubeovnv1.GatewayExIp{}).
-		Complete(r)
-}
 
 type AgentSpecification struct {
 	ClusterID        string
