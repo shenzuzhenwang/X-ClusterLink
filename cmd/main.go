@@ -64,6 +64,8 @@ func init() {
 
 	utilruntime.Must(submarinerv1alpha1.AddToScheme(scheme))
 
+	utilruntime.Must(Submariner.AddToScheme(clientgoscheme.Scheme))
+
 	utilruntime.Must(submarinerv1alpha1.AddToScheme(clientgoscheme.Scheme))
 	//+kubebuilder:scaffold:scheme
 
