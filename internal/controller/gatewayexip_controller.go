@@ -22,6 +22,7 @@ import (
 	kubeovnv1 "kubeovn-multivpc/api/v1"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	pkgError "github.com/pkg/errors"
@@ -149,10 +150,14 @@ func (c *Controller) onRemoteGatewayExIp(obj runtime.Object, _ int, op syncer.Op
 // Broker 成功同步到 local 后执行的操作
 func (c *Controller) onRemoteGatewayExIpSynced(obj runtime.Object, op syncer.Operation) bool {
 	gatewayExIp := obj.(*kubeovnv1.GatewayExIp)
-	gatewayId := gatewayExIp.GetObjectMeta().GetLabels()["submariner-io/originatingNamespace"]
-	clusterId := gatewayExIp.GetObjectMeta().GetLabels()["submariner-io/clusterID"]
+
+	// 找到相关的vpcNatTunnel（即使用此gatewayExIp的）
+	splitStrings := strings.SplitN(gatewayExIp.Name, ".", 2)
+	gatewayName := splitStrings[0]
+	clusterId := splitStrings[1]
+
 	options := metav1.ListOptions{
-		LabelSelector: fmt.Sprintf("remoteCluster=%s,remoteGateway=%s", clusterId, gatewayId),
+		LabelSelector: fmt.Sprintf("remoteCluster=%s,remoteGateway=%s", clusterId, gatewayName),
 	}
 	vpcNatTunnelList := &kubeovnv1.VpcNatTunnelList{}
 	objList, err := c.syncer.GetLocalClient().Resource(schema.GroupVersionResource{
@@ -165,8 +170,10 @@ func (c *Controller) onRemoteGatewayExIpSynced(obj runtime.Object, op syncer.Ope
 		return false
 	}
 	utilruntime.Must(c.scheme.Convert(objList, vpcNatTunnelList, nil))
+
+	// 更改vpcNatTunnel的status（主要更改RemoteIP）
 	for _, vpcNatTunnel := range vpcNatTunnelList.Items {
-		vpcNatTunnel.Status.RemoteIP = gatewayExIp.Spec.ExternalIP
+		vpcNatTunnel.Spec.RemoteIP = gatewayExIp.Spec.ExternalIP // 感觉只是触发了handleCreateOrUpdate而已 TODO：更改
 		data := &unstructured.Unstructured{}
 		utilruntime.Must(c.scheme.Convert(vpcNatTunnel, data, nil))
 		_, err = c.syncer.GetLocalClient().Resource(schema.GroupVersionResource{

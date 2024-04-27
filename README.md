@@ -116,7 +116,7 @@ metadata:
   namespace: ns1
 spec:
   clusterId: "cluster2" #互联的对端集群ID
-  gatewayId: "gw1"    # 互联的对端集群 vpc-gw 名字
+  gatewayName: "gw1"    # 互联的对端集群 vpc-gw 名字
   interfaceAddr: "10.100.0.1/24" #隧道地址
   natGwDp: "gw1" #本集群 vpc-gw 名字
 ```
@@ -173,4 +173,4 @@ spec:
 
 其中，`externalip`代表本端隧道的vpc-gw的物理网络IP（net1网卡IP）；`globalnetcidr`代表本端集群的submariner GlobalnetCIDR；`name`生成时，会使用`vpc-gw name` - `cluster id`，以防多集群同步出现碰撞。
 
-这个GatewayExIp crd会同步至broker，然后同步到各集群上，其他集群建立VpcNatTunnel 时，就可以通过指定`gatewayId`和`clusterId`来寻找对应的GatewayExIp，从而得到对端隧道的`externalip`和`globalnetcidr`，最后成功建立隧道。隧道的具体创建方式与前文一样。
+这个GatewayExIp crd会同步至broker，然后同步到各集群上，其他集群建立VpcNatTunnel 时，就可以通过指定`gatewayName`和`clusterId`来寻找对应的GatewayExIp，从而得到对端隧道的`externalip`和`globalnetcidr`，最后成功建立隧道。隧道的具体创建方式与前文一样。

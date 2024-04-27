@@ -27,7 +27,7 @@ func (v *VxlanOperation) CreateCmd() string {
 
 	createCmd := fmt.Sprintf("ip link add %s type vxlan id %s dev net1 dstport %s remote %s local %s", tunnel.Name, vid, port, tunnel.Status.RemoteIP, tunnel.Status.InternalIP)
 	setUpCmd := fmt.Sprintf("ip link set %s up", tunnel.Name)
-	addrCmd := fmt.Sprintf("ip addr add %s dev %s", tunnel.Spec.InterfaceAddr, tunnel.Name)
+	addrCmd := fmt.Sprintf("ip addr add %s dev %s", tunnel.Status.InterfaceAddr, tunnel.Name)
 	return createCmd + ";" + setUpCmd + ";" + addrCmd
 }
 

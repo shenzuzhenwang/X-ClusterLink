@@ -41,21 +41,22 @@ spec:
             properties:
               clusterId:
                 type: string
-              gatewayId:
+              gatewayName:
                 type: string
               interfaceAddr:
                 type: string
               natGwDp:
+                type: string
+              remoteIp:
                 type: string
               type:
                 default: gre
                 type: string
             required:
             - clusterId
-            - gatewayId
+            - gatewayName
             - interfaceAddr
             - natGwDp
-            - type
             type: object
           status:
             description: VpcNatTunnelStatus defines the observed state of VpcNatTunnel

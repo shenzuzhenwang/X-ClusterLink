@@ -23,11 +23,13 @@ import (
 // VpcNatTunnelSpec defines the desired state of VpcNatTunnel
 type VpcNatTunnelSpec struct {
 	ClusterId     string `json:"clusterId"`
-	GatewayId     string `json:"gatewayId"`
+	GatewayName   string `json:"gatewayName"`
 	InterfaceAddr string `json:"interfaceAddr"`
 	NatGwDp       string `json:"natGwDp"`
 	// +kubebuilder:default="gre"
-	Type string `json:"type"`
+	Type string `json:"type,omitempty"`
+
+	RemoteIP string `json:"remoteIp,omitempty"`
 }
 
 // VpcNatTunnelStatus defines the observed state of VpcNatTunnel

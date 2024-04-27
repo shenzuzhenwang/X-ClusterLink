@@ -21,7 +21,7 @@ func (g *GreOperation) CreateCmd() string {
 
 	createCmd := fmt.Sprintf("ip tunnel add %s mode gre remote %s local %s ttl 255", tunnel.Name, tunnel.Status.RemoteIP, tunnel.Status.InternalIP)
 	setUpCmd := fmt.Sprintf("ip link set %s up", tunnel.Name)
-	addrCmd := fmt.Sprintf("ip addr add %s dev %s", tunnel.Spec.InterfaceAddr, tunnel.Name)
+	addrCmd := fmt.Sprintf("ip addr add %s dev %s", tunnel.Status.InterfaceAddr, tunnel.Name)
 	return createCmd + ";" + setUpCmd + ";" + addrCmd
 }
 
