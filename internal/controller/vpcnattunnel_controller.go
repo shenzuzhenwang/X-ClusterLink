@@ -300,7 +300,7 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			return ctrl.Result{}, err
 		}
 
-		err = r.execCommandInPod(gwpod.Name, gwpod.Namespace, "vpc-nat-gw", r.genCreateTunnelCmd(vpcTunnel))
+		err = r.execCommandInPod(gwpod.Name, gwpod.Namespace, "vpc-nat-gw", r.genCreateTunnelCmd(vpcTunnel)) // 多次运行
 		if err != nil {
 			log.Log.Error(err, "Error exec genCreateTunnelCmd in Initialized")
 			return ctrl.Result{}, err
