@@ -206,7 +206,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 						return
 					}
 					if err = r.Tunnelr.Status().Update(ctx, &vpcTunnel); err != nil {
-						log.Log.Error(err, "Error update vpcTunnel")
+						log.Log.Error(err, "Error update vpcTunnel Status")
 						return
 					}
 					/*********************/

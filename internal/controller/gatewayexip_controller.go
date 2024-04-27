@@ -171,11 +171,11 @@ func (c *Controller) onRemoteGatewayExIpSynced(obj runtime.Object, op syncer.Ope
 	}
 	utilruntime.Must(c.scheme.Convert(objList, vpcNatTunnelList, nil))
 
-	// 更改vpcNatTunnel的status（主要更改RemoteIP）
+	// 更改vpcNatTunnel（主要更改RemoteIP）
 	for _, vpcNatTunnel := range vpcNatTunnelList.Items {
 		vpcNatTunnel.Spec.RemoteIP = gatewayExIp.Spec.ExternalIP // 感觉只是触发了handleCreateOrUpdate而已 TODO：更改
 		data := &unstructured.Unstructured{}
-		utilruntime.Must(c.scheme.Convert(&vpcNatTunnel, data, nil)) // 出错！！
+		utilruntime.Must(c.scheme.Convert(&vpcNatTunnel, data, nil))
 		_, err = c.syncer.GetLocalClient().Resource(schema.GroupVersionResource{
 			Group:    "kubeovn.ustc.io",
 			Version:  "v1",

@@ -311,6 +311,12 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			return ctrl.Result{}, err
 		}
 
+		err = r.Status().Update(ctx, vpcTunnel)
+		if err != nil {
+			log.Log.Error(err, "Error Update vpcTunnel Status")
+			return ctrl.Result{}, err
+		}
+
 		// 增加label，方便查找
 		labels := vpcTunnel.GetLabels()
 		if labels == nil {
@@ -325,7 +331,8 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			log.Log.Error(err, "Error Update vpcTunnel")
 			return ctrl.Result{}, err
 		}
-		//ClusterId和GatewayName字段更改，都会表现在gatewayExIp.Spec.ExternalIP和gatewayExIp.Spec.GlobalNetCIDR
+
+		// ClusterId和GatewayName字段更改，都会表现在gatewayExIp.Spec.ExternalIP和gatewayExIp.Spec.GlobalNetCIDR
 	} else if vpcTunnel.Status.Initialized && (vpcTunnel.Status.RemoteIP != gatewayExIp.Spec.ExternalIP ||
 		vpcTunnel.Status.InterfaceAddr != vpcTunnel.Spec.InterfaceAddr || vpcTunnel.Status.NatGwDp != vpcTunnel.Spec.NatGwDp ||
 		vpcTunnel.Status.RemoteGlobalnetCIDR != gatewayExIp.Spec.GlobalNetCIDR || vpcTunnel.Status.Type != vpcTunnel.Spec.Type) {
@@ -351,6 +358,7 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			}
 			return ctrl.Result{}, nil
 		}
+
 		// 删除路由和隧道后再添加
 		gwpod, err := r.getNatGwPod(vpcTunnel.Status.NatGwDp) // find pod named Status.NatGwDp
 		if err != nil {
@@ -387,6 +395,17 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 		if err != nil {
 			log.Log.Error(err, "Error Update vpcTunnel")
 			return ctrl.Result{}, err
+		}
+
+		// ClusterId和GatewayName字段更改，label也改
+		if vpcTunnel.Labels["remoteCluster"] != vpcTunnel.Spec.ClusterId || vpcTunnel.Labels["remoteGateway"] != vpcTunnel.Spec.GatewayName {
+			vpcTunnel.Labels["remoteCluster"] = vpcTunnel.Spec.ClusterId
+			vpcTunnel.Labels["remoteGateway"] = vpcTunnel.Spec.GatewayName
+			err := r.Update(ctx, vpcTunnel)
+			if err != nil {
+				log.Log.Error(err, "Error Update vpcTunnel")
+				return ctrl.Result{}, err
+			}
 		}
 	}
 
