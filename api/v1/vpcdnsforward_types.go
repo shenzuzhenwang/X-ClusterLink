@@ -27,7 +27,6 @@ type VpcDnsForwardSpec struct {
 
 // VpcDnsForwardStatus defines the observed state of VpcDnsForward
 type VpcDnsForwardStatus struct {
-	Initialized bool `json:"initialized,omitempty"`
 }
 
 //+kubebuilder:object:root=true

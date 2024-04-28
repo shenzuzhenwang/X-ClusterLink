@@ -174,3 +174,15 @@ spec:
 其中，`externalip`代表本端隧道的vpc-gw的物理网络IP（net1网卡IP）；`globalnetcidr`代表本端集群的submariner GlobalnetCIDR；`name`生成时，会使用`vpc-gw name` - `cluster id`，以防多集群同步出现碰撞。
 
 这个GatewayExIp crd会同步至broker，然后同步到各集群上，其他集群建立VpcNatTunnel 时，就可以通过指定`gatewayName`和`clusterId`来寻找对应的GatewayExIp，从而得到对端隧道的`externalip`和`globalnetcidr`，最后成功建立隧道。隧道的具体创建方式与前文一样。
+
+
+
+## Directory Structure
+
+* api: crd的定义
+* bin: bin kubebuilder的一些编译工具
+* cmd: main函数起始点nfig
+* config: kubuilder生成的配置文件，包括CRD 定义文件、RBAC 角色配置文件等
+* internal: 包括crd状态变更时的代码逻辑
+* sample: crd的例子
+* test: kubebuilder自带的测试，由于我们都是在集群上进行测试，因此未使用

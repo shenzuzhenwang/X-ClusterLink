@@ -192,7 +192,7 @@ func (r *VpcNatTunnelReconciler) getGwExternIP(pod *corev1.Pod) (string, error) 
 	}
 }
 
-func (r *VpcNatTunnelReconciler) getPodGwIP(pod *corev1.Pod) (string, error) {
+func (r *VpcNatTunnelReconciler) getOvnGwIP(pod *corev1.Pod) (string, error) {
 	if gw, ok := pod.Annotations["ovn.kubernetes.io/gateway"]; ok {
 		return gw, nil
 	} else {
@@ -227,7 +227,7 @@ func (r *VpcNatTunnelReconciler) genDeleteTunnelCmd(tunnel *kubeovnv1.VpcNatTunn
 	return r.tunnelOpFact.CreateTunnelOperation(tunnel).DeleteCmd()
 }
 
-// 更新TunnelStatus的值
+// update PodGwIP GlobalEgressIP GlobalnetCIDR GwExternIP
 func (r *VpcNatTunnelReconciler) updateTunnelStatus(vpcTunnel *kubeovnv1.VpcNatTunnel, pod *corev1.Pod) error {
 	GlobalnetCIDR, err := r.getGlobalnetCIDR()
 	if err != nil {
@@ -235,7 +235,7 @@ func (r *VpcNatTunnelReconciler) updateTunnelStatus(vpcTunnel *kubeovnv1.VpcNatT
 		return err
 	}
 	vpcTunnel.Status.GlobalnetCIDR = GlobalnetCIDR
-	ovnGwIP, err := r.getPodGwIP(pod)
+	ovnGwIP, err := r.getOvnGwIP(pod)
 	if err != nil {
 		log.Log.Error(err, "Error get local PodGwIP")
 		return err
@@ -265,7 +265,7 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 		}
 	}
 
-	// 获取 GatewayExIp
+	// 获取 VpcNatTunnel对应的对端GatewayExIp crd
 	gatewayExIp := &kubeovnv1.GatewayExIp{}
 	err := r.Client.Get(ctx, client.ObjectKey{
 		Name:      vpcTunnel.Spec.GatewayName + "." + vpcTunnel.Spec.ClusterId,
@@ -276,11 +276,11 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 		return ctrl.Result{}, err
 	}
 
-	if !vpcTunnel.Status.Initialized { // 首次创建
-		// 初始化 remoteIp
+	if !vpcTunnel.Status.Initialized { // first build tunnel
+		// init remoteIp
 		vpcTunnel.Status.RemoteIP = gatewayExIp.Spec.ExternalIP
 		vpcTunnel.Spec.RemoteIP = gatewayExIp.Spec.ExternalIP
-		// 初始化 GlobalNetCIDR
+		// init GlobalNetCIDR
 		vpcTunnel.Status.RemoteGlobalnetCIDR = gatewayExIp.Spec.GlobalNetCIDR
 
 		vpcTunnel.Status.Initialized = true
@@ -300,7 +300,7 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			return ctrl.Result{}, err
 		}
 
-		err = r.execCommandInPod(gwpod.Name, gwpod.Namespace, "vpc-nat-gw", r.genCreateTunnelCmd(vpcTunnel)) // 多次运行
+		err = r.execCommandInPod(gwpod.Name, gwpod.Namespace, "vpc-nat-gw", r.genCreateTunnelCmd(vpcTunnel))
 		if err != nil {
 			log.Log.Error(err, "Error exec genCreateTunnelCmd in Initialized")
 			return ctrl.Result{}, err
@@ -317,7 +317,7 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			return ctrl.Result{}, err
 		}
 
-		// 增加label，方便查找
+		// add label, to find tunnel
 		labels := vpcTunnel.GetLabels()
 		if labels == nil {
 			labels = make(map[string]string)
@@ -332,11 +332,11 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			return ctrl.Result{}, err
 		}
 
-		// ClusterId和GatewayName字段更改，都会表现在gatewayExIp.Spec.ExternalIP和gatewayExIp.Spec.GlobalNetCIDR
+		// if ClusterId or GatewayName update, then gatewayExIp.Spec.ExternalIP or gatewayExIp.Spec.GlobalNetCIDR will update too
 	} else if vpcTunnel.Status.Initialized && (vpcTunnel.Status.RemoteIP != gatewayExIp.Spec.ExternalIP ||
 		vpcTunnel.Status.InterfaceAddr != vpcTunnel.Spec.InterfaceAddr || vpcTunnel.Status.NatGwDp != vpcTunnel.Spec.NatGwDp ||
 		vpcTunnel.Status.RemoteGlobalnetCIDR != gatewayExIp.Spec.GlobalNetCIDR || vpcTunnel.Status.Type != vpcTunnel.Spec.Type) {
-		// 不能改变隧道type
+		// can't update type
 		if vpcTunnel.Status.Type != vpcTunnel.Spec.Type {
 			log.Log.Error(errors.New("tunnel type should not change"), fmt.Sprintf("tunnel :%#v\n", vpcTunnel))
 			vpcTunnel.Spec.Type = vpcTunnel.Status.Type
@@ -347,7 +347,7 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			}
 			return ctrl.Result{}, nil
 		}
-		// 不能改变隧道的gateway
+		// can't update NatGwDp
 		if vpcTunnel.Status.NatGwDp != vpcTunnel.Spec.NatGwDp {
 			log.Log.Error(errors.New("tunnel Gateway pod should not change"), fmt.Sprintf("tunnel :%#v\n", vpcTunnel))
 			vpcTunnel.Spec.NatGwDp = vpcTunnel.Status.NatGwDp
@@ -359,7 +359,7 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			return ctrl.Result{}, nil
 		}
 
-		// 删除路由和隧道后再添加
+		// if spec update, we should delete route and tunnel, then create again
 		gwpod, err := r.getNatGwPod(vpcTunnel.Status.NatGwDp) // find pod named Status.NatGwDp
 		if err != nil {
 			log.Log.Error(err, "Error get GwPod")
@@ -397,7 +397,7 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			return ctrl.Result{}, err
 		}
 
-		// ClusterId和GatewayName字段更改，label也改
+		// if ClusterId or GatewayName update, label need to update
 		if vpcTunnel.Labels["remoteCluster"] != vpcTunnel.Spec.ClusterId || vpcTunnel.Labels["remoteGateway"] != vpcTunnel.Spec.GatewayName {
 			vpcTunnel.Labels["remoteCluster"] = vpcTunnel.Spec.ClusterId
 			vpcTunnel.Labels["remoteGateway"] = vpcTunnel.Spec.GatewayName
@@ -414,7 +414,8 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 
 func (r *VpcNatTunnelReconciler) handleDelete(ctx context.Context, vpcTunnel *kubeovnv1.VpcNatTunnel) (ctrl.Result, error) {
 	if containsString(vpcTunnel.ObjectMeta.Finalizers, "tunnel.finalizer.ustc.io") {
-		// TODO: implement clean up the GRE tunnel before deletion
+
+		// delete route and tunnel
 		gwpod, err := r.getNatGwPod(vpcTunnel.Status.NatGwDp)
 		if err != nil {
 			log.Log.Error(err, "Error get GwPod")

@@ -61,7 +61,7 @@ type Controller struct {
 	scheme    *runtime.Scheme
 }
 
-// 设置环境变量，从 ServiceDiscovery 对象
+// from ServiceDiscovery crd, set the environment vars
 func InitEnvVars(syncerConf broker.SyncerConfig) error {
 	cr := &submarinerv1alpha1.ServiceDiscovery{}
 	obj, err := syncerConf.LocalClient.Resource(schema.GroupVersionResource{
@@ -87,13 +87,13 @@ func InitEnvVars(syncerConf broker.SyncerConfig) error {
 	return nil
 }
 
-func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller {
+func NewGwExIpSyner(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller {
 	c := &Controller{
 		clusterID: spec.ClusterID,
 		scheme:    syncerConfig.Scheme,
 	}
 	var err error
-	// 配置 Syncer
+	// set GatewayExIp crd syncer config
 	syncerConfig.LocalNamespace = metav1.NamespaceAll
 	syncerConfig.LocalClusterID = spec.ClusterID
 	syncerConfig.ResourceConfigs = []broker.ResourceConfig{
@@ -108,7 +108,7 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 			BrokerResyncPeriod:         BrokerResyncPeriod,
 		},
 	}
-	// 创建broker Syncer, 对于syncerConfig.ResourceConfigs中的所有资源进行双向同步
+	// create broker Syncer, set Two-way sync for ResourceConfig
 	c.syncer, err = broker.NewSyncer(syncerConfig)
 	if err != nil {
 		log.Log.Error(err, "error creating GatewayExIp syncer")
@@ -117,6 +117,7 @@ func New(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller
 	return c
 }
 
+// start syncer to sync
 func (c *Controller) Start(ctx context.Context) error {
 	stopCh := ctx.Done()
 	if err := c.syncer.Start(stopCh); err != nil {
@@ -126,7 +127,7 @@ func (c *Controller) Start(ctx context.Context) error {
 	return nil
 }
 
-// local 同步到 Broker 前执行的操作
+// operate before local to Broker
 func (c *Controller) onLocalGatewayExIp(obj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
 	gatewayExIp := obj.(*kubeovnv1.GatewayExIp)
 	if gatewayExIp.Namespace == "submariner-k8s-broker" {
@@ -135,23 +136,22 @@ func (c *Controller) onLocalGatewayExIp(obj runtime.Object, _ int, op syncer.Ope
 	return gatewayExIp, false
 }
 
-// local 成功同步到 Broker 后执行的操作
+// operate after local to Broker
 func (c *Controller) onLocalGatewayExIpSynced(obj runtime.Object, op syncer.Operation) bool {
 	return false
 }
 
-// Broker 同步到 local 前执行的操作
+// operate before Broker to local
 func (c *Controller) onRemoteGatewayExIp(obj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
 	gatewayExIp := obj.(*kubeovnv1.GatewayExIp)
 	gatewayExIp.Namespace = gatewayExIp.GetObjectMeta().GetLabels()["submariner-io/originatingNamespace"]
 	return gatewayExIp, false
 }
 
-// Broker 成功同步到 local 后执行的操作
+// operate after Broker to local
 func (c *Controller) onRemoteGatewayExIpSynced(obj runtime.Object, op syncer.Operation) bool {
+	// find vpcNatTunnels which use this GatewayExIp
 	gatewayExIp := obj.(*kubeovnv1.GatewayExIp)
-
-	// 找到相关的vpcNatTunnel（即使用此gatewayExIp的）
 	splitStrings := strings.SplitN(gatewayExIp.Name, ".", 2)
 	gatewayName := splitStrings[0]
 	clusterId := splitStrings[1]
@@ -171,7 +171,7 @@ func (c *Controller) onRemoteGatewayExIpSynced(obj runtime.Object, op syncer.Ope
 	}
 	utilruntime.Must(c.scheme.Convert(objList, vpcNatTunnelList, nil))
 
-	// 更改vpcNatTunnel（主要更改RemoteIP）
+	// update vpcNatTunnels, and maybe reconstruction tunnel
 	for _, vpcNatTunnel := range vpcNatTunnelList.Items {
 		vpcNatTunnel.Spec.RemoteIP = gatewayExIp.Spec.ExternalIP // 感觉只是触发了handleCreateOrUpdate而已 TODO：更改
 		data := &unstructured.Unstructured{}

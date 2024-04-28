@@ -125,6 +125,7 @@ func main() {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
+
 	// VpcNatTunnel Reconciler
 	vpcNatTunnelReconciler := &controller.VpcNatTunnelReconciler{
 		Client: mgr.GetClient(),
@@ -143,8 +144,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	/************/
-	// 创建config
+	// ************* submariner broker syner gwexip crd
 	cfg := mgr.GetConfig()
 
 	restMapper, err := util.BuildRestMapper(cfg)
@@ -176,13 +176,13 @@ func main() {
 		setupLog.Error(err, "Error processing env config for agent spec")
 		os.Exit(1)
 	}
-	if err = mgr.Add(controller.New(&agentSpec, syncerConfig)); err != nil {
+	if err = mgr.Add(controller.NewGwExIpSyner(&agentSpec, syncerConfig)); err != nil {
 		setupLog.Error(err, "unable to set up gatewayexip agent")
 		os.Exit(1)
 	}
 	/************/
 
-	// Gateway Informer
+	// Gateway statefuleset Informer
 	if err := mgr.Add(controller.NewInformer(agentSpec.ClusterID, mgr.GetClient(), mgr.GetConfig(), vpcNatTunnelReconciler)); err != nil {
 		setupLog.Error(err, "unable to set up gateway informer")
 		os.Exit(1)
