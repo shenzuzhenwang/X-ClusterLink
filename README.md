@@ -185,4 +185,3 @@ spec:
 * config: kubuilder生成的配置文件，包括CRD 定义文件、RBAC 角色配置文件等
 * internal: 包括crd状态变更时的代码逻辑
 * sample: crd的例子
-* test: kubebuilder自带的测试，由于我们都是在集群上进行测试，因此未使用
