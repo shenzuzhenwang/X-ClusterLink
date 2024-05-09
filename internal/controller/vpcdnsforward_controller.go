@@ -68,11 +68,13 @@ func (r *VpcDnsForwardReconciler) handleCreateOrUpdate(ctx context.Context, vpcD
 		controllerutil.AddFinalizer(vpcDns, "dns.finalizer.ustc.io")
 		err := r.Update(ctx, vpcDns)
 		if err != nil {
+			log.Log.Error(err, "Error Update VpcDnsForward")
 			return ctrl.Result{}, err
 		}
 	}
 	err := r.createDnsConnection(ctx, vpcDns)
 	if err != nil {
+		log.Log.Error(err, "Error createDnsConnection to VpcDnsForward")
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
@@ -82,27 +84,31 @@ func (r *VpcDnsForwardReconciler) handleDelete(ctx context.Context, vpcDns *kube
 	if containsString(vpcDns.ObjectMeta.Finalizers, "dns.finalizer.ustc.io") {
 		err := r.deleteDnsConnection(ctx, vpcDns)
 		if err != nil {
+			log.Log.Error(err, "Error deleteDnsConnection to VpcDnsForward")
 			return ctrl.Result{}, err
 		}
 		controllerutil.RemoveFinalizer(vpcDns, "dns.finalizer.ustc.io")
 		err = r.Update(ctx, vpcDns)
 		if err != nil {
+			log.Log.Error(err, "Error Update VpcDnsForward")
 			return ctrl.Result{}, err
 		}
 	}
 	return ctrl.Result{}, nil
 }
 
-// 检查 Vpc-Dns 的 Corefile
+// check Corefile of vpc-dns if updated
 func (r *VpcDnsForwardReconciler) checkDnsCorefile(ctx context.Context) (bool, error) {
-	cm := corev1.ConfigMap{}
+	cm := &corev1.ConfigMap{}
 	err := r.Get(ctx, client.ObjectKey{
 		Name:      "vpc-dns-corefile",
 		Namespace: "kube-system",
-	}, &cm)
+	}, cm)
 	if err != nil {
+		log.Log.Error(err, "Error Get ConfigMap vpc-dns-corefile")
 		return false, err
 	}
+	// find whether "clusterset.local" in corefile
 	if strings.Contains(cm.Data["Corefile"], "clusterset.local") {
 		return true, nil
 	} else {
@@ -110,174 +116,178 @@ func (r *VpcDnsForwardReconciler) checkDnsCorefile(ctx context.Context) (bool, e
 	}
 }
 
-// 更新 Vpc-Dns 的 Corefile
 func (r *VpcDnsForwardReconciler) updateDnsCorefile(ctx context.Context) error {
-	cm := corev1.ConfigMap{}
+	cm := &corev1.ConfigMap{}
 	err := r.Get(ctx, client.ObjectKey{
 		Name:      "vpc-dns-corefile",
 		Namespace: "kube-system",
-	}, &cm)
+	}, cm)
 	if err != nil {
+		log.Log.Error(err, "Error Get ConfigMap vpc-dns-corefile")
 		return err
 	}
-	// 获取 CoreDNS 的 svc
-	var coreDnsSvc corev1.Service
+	// find k8s coredns cluster ip
+	coreDnsSvc := &corev1.Service{}
 	err = r.Client.Get(ctx, client.ObjectKey{
 		Name:      "kube-dns",
 		Namespace: "kube-system",
-	}, &coreDnsSvc)
+	}, coreDnsSvc)
 	if err != nil {
+		log.Log.Error(err, "Error Get Service kube-dns")
 		return err
 	}
+	// add dns forward to k8s coredns cluster ip
 	add := `clusterset.local:53 {
     forward . ` + coreDnsSvc.Spec.ClusterIP + `
   }
   .:53 {`
 	cm.Data["Corefile"] = strings.Replace(cm.Data["Corefile"], ".:53 {", add, 1)
-	err = r.Client.Update(ctx, &cm)
+	err = r.Client.Update(ctx, cm)
 	if err != nil {
+		log.Log.Error(err, "Error Update ConfigMap vpc-dns-corefile")
 		return err
 	}
 
-	// 获取 Vpc-Dns CR 和 Deployment
-	var vpcDnsList ovn.VpcDnsList
-	err = r.Client.List(ctx, &vpcDnsList, &client.ListOptions{})
-	if err != nil {
-		return err
-	}
+	// var vpcDnsList ovn.VpcDnsList
+	// err = r.Client.List(ctx, &vpcDnsList, &client.ListOptions{})
+	// if err != nil {
+	// 	return err
+	// }
 	return nil
 }
 
-// 建立 DNS 路由转发
-func (r *VpcDnsForwardReconciler) createDnsConnection(ctx context.Context, vpcDns *kubeovnv1.VpcDnsForward) error {
-	state, err := r.checkDnsCorefile(ctx)
-	if err != nil {
-		return err
-	}
-	// 更新 Corefile
-	if !state {
-		err = r.updateDnsCorefile(ctx)
-		if err != nil {
-			return err
-		}
-	}
-	// 获取 CoreDNS 的 svc
-	var coreDnsSvc corev1.Service
-	err = r.Client.Get(ctx, client.ObjectKey{
-		Name:      "kube-dns",
-		Namespace: "kube-system",
-	}, &coreDnsSvc)
-	if err != nil {
-		return err
-	}
-	// 获取 Vpc-Dns CR 和 Deployment
-	var ovnDnsList ovn.VpcDnsList
-	var ovnDns ovn.VpcDns
-	err = r.Client.List(ctx, &ovnDnsList, &client.ListOptions{})
-	if err != nil {
-		return err
-	}
-	// 寻找资源状态为 true 的 Vpc-Dns
-	for _, it := range ovnDnsList.Items {
-		if it.Spec.Vpc == vpcDns.Spec.Vpc && it.Status.Active {
-			ovnDns = it
-			break
-		}
-	}
-	var ovnDnsDeployment appsv1.Deployment
-	err = r.Client.Get(ctx, client.ObjectKey{
-		Name:      "vpc-dns-" + ovnDns.Name,
-		Namespace: "kube-system",
-	}, &ovnDnsDeployment)
-	if err != nil {
-		return err
-	}
-	// 获取默认子网 subnet
-	var subnet ovn.Subnet
-	err = r.Client.Get(ctx, client.ObjectKey{
-		Name: "ovn-default",
-	}, &subnet)
-	if err != nil {
-		return err
-	}
-	// 在 Vpc-Dns 的 Deployment 中 添加到 CoreDNS 的路由
-	initContainers := ovnDnsDeployment.Spec.Template.Spec.InitContainers
-	route := `ip -4 route add ` + coreDnsSvc.Spec.ClusterIP + ` via ` + subnet.Spec.Gateway + ` dev net1;`
-	for i := 0; i < len(initContainers); i++ {
-		for j := 0; j < len(initContainers[i].Command); j++ {
-			if strings.Contains(initContainers[i].Command[j], "ip -4 route add") {
-				if !strings.Contains(initContainers[i].Command[j], route) {
-					initContainers[i].Command[j] = initContainers[i].Command[j] + route
-				}
-			}
-		}
-	}
-	// 更新 Deployment
-	err = r.Client.Update(ctx, &ovnDnsDeployment)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-// 删除 DNS 路由转发
-func (r *VpcDnsForwardReconciler) deleteDnsConnection(ctx context.Context, vpcDns *kubeovnv1.VpcDnsForward) error {
-	// 获取 CoreDNS 的 svc
-	var coreDnsSvc corev1.Service
+func (r *VpcDnsForwardReconciler) genRouteToCoreDNS(ctx context.Context) (string, error) {
+	// find k8s CoreDNS svc
+	coreDnsSvc := &corev1.Service{}
 	err := r.Client.Get(ctx, client.ObjectKey{
 		Name:      "kube-dns",
 		Namespace: "kube-system",
-	}, &coreDnsSvc)
+	}, coreDnsSvc)
 	if err != nil {
-		return err
+		log.Log.Error(err, "Error Get Service kube-dns")
+		return "", err
 	}
-	// 获取 Vpc-Dns CR 和 Deployment
-	var ovnDnsList ovn.VpcDnsList
-	var ovnDns ovn.VpcDns
-	err = r.Client.List(ctx, &ovnDnsList, &client.ListOptions{})
+	// find default subnet
+	subnet := &ovn.Subnet{}
+	err = r.Client.Get(ctx, client.ObjectKey{
+		Name: "ovn-default",
+	}, subnet)
 	if err != nil {
-		return err
+		log.Log.Error(err, "Error Get Subnet ovn-default")
+		return "", err
 	}
-	// 寻找资源状态为 true 的 Vpc-Dns
+	// add route from custom vpc to default vpc via vpc-dns net1
+	route := `ip -4 route add ` + coreDnsSvc.Spec.ClusterIP + ` via ` + subnet.Spec.Gateway + ` dev net1;`
+	return route, nil
+}
+
+func (r *VpcDnsForwardReconciler) getVpcDnsDeployment(ctx context.Context, vpcDns *kubeovnv1.VpcDnsForward) (*appsv1.Deployment, error) {
+	// find Vpc-Dns list
+	ovnDnsList := &ovn.VpcDnsList{}
+	err := r.Client.List(ctx, ovnDnsList, &client.ListOptions{})
+	if err != nil {
+		log.Log.Error(err, "Error Get VpcDnsList")
+		return nil, err
+	}
+	// find Vpc-Dns which status is Active
+	ovnDns := &ovn.VpcDns{}
 	for _, it := range ovnDnsList.Items {
 		if it.Spec.Vpc == vpcDns.Spec.Vpc && it.Status.Active {
-			ovnDns = it
+			*ovnDns = it
 			break
 		}
 	}
-	var ovnDnsDeployment appsv1.Deployment
+	// find deployment of this vpc-dns
+	vpcDnsDeployment := &appsv1.Deployment{}
 	err = r.Client.Get(ctx, client.ObjectKey{
 		Name:      "vpc-dns-" + ovnDns.Name,
 		Namespace: "kube-system",
-	}, &ovnDnsDeployment)
+	}, vpcDnsDeployment)
 	if err != nil {
+		log.Log.Error(err, "Error Get vpcDnsDeployment")
+		return nil, err
+	}
+	return vpcDnsDeployment, nil
+}
+
+// add vpc-dns deployment route
+func (r *VpcDnsForwardReconciler) createDnsConnection(ctx context.Context, vpcDns *kubeovnv1.VpcDnsForward) error {
+	state, err := r.checkDnsCorefile(ctx)
+	if err != nil {
+		log.Log.Error(err, "Error checkDnsCorefile")
 		return err
 	}
-	// 获取对应的 subnet
-	var subnet ovn.Subnet
-	err = r.Client.Get(ctx, client.ObjectKey{
-		Name: "ovn-default",
-	}, &subnet)
-	if err != nil {
-		return err
-	}
-	// 在 Vpc-Dns 的 Deployment 中 删除到 CoreDNS 的路由
-	route := `ip -4 route add ` + coreDnsSvc.Spec.ClusterIP + ` via ` + subnet.Spec.Gateway + ` dev net1;`
-	initContainers := ovnDnsDeployment.Spec.Template.Spec.InitContainers
-	for i := 0; i < len(initContainers); i++ {
-		for j := 0; j < len(initContainers[i].Command); j++ {
-			initContainers[i].Command[j] = strings.Replace(initContainers[i].Command[j], route, "", -1)
+	// if vpc-dns Corefile didn't update, then update it
+	if !state {
+		err = r.updateDnsCorefile(ctx)
+		if err != nil {
+			log.Log.Error(err, "Error updateDnsCorefile")
+			return err
 		}
 	}
-	// 更新 Deployment
-	err = r.Client.Update(ctx, &ovnDnsDeployment)
+
+	route, err := r.genRouteToCoreDNS(ctx)
 	if err != nil {
+		log.Log.Error(err, "Error genRouteToCoreDNS")
 		return err
 	}
-	// 更新状态
-	vpcDns.Status.Initialized = true
-	err = r.Update(ctx, vpcDns)
+	vpcDnsDeployment, err := r.getVpcDnsDeployment(ctx, vpcDns)
 	if err != nil {
+		log.Log.Error(err, "Error getVpcDnsDeployment")
+		return err
+	}
+
+	// add route from custom vpc to default vpc via vpc-dns net1 in vpc-dns deployment
+	initContainers := &vpcDnsDeployment.Spec.Template.Spec.InitContainers[0]
+	for j := 0; j < len(initContainers.Command); j++ {
+		if strings.Contains(initContainers.Command[j], "ip -4 route add") {
+			if !strings.Contains(initContainers.Command[j], route) {
+				initContainers.Command[j] = initContainers.Command[j] + route
+			}
+		}
+	}
+	// for i := 0; i < len(initContainers); i++ {
+	// 	for j := 0; j < len(initContainers[i].Command); j++ {
+	// 		if strings.Contains(initContainers[i].Command[j], "ip -4 route add") {
+	// 			if !strings.Contains(initContainers[i].Command[j], route) {
+	// 				initContainers[i].Command[j] = initContainers[i].Command[j] + route
+	// 			}
+	// 		}
+	// 	}
+	// }
+
+	err = r.Client.Update(ctx, vpcDnsDeployment)
+	if err != nil {
+		log.Log.Error(err, "Error Update vpcDnsDeployment")
+		return err
+	}
+	return nil
+}
+
+// delete vpc-dns deployment route
+func (r *VpcDnsForwardReconciler) deleteDnsConnection(ctx context.Context, vpcDns *kubeovnv1.VpcDnsForward) error {
+	route, err := r.genRouteToCoreDNS(ctx)
+	if err != nil {
+		log.Log.Error(err, "Error genRouteToCoreDNS")
+		return err
+	}
+	vpcDnsDeployment, err := r.getVpcDnsDeployment(ctx, vpcDns)
+	if err != nil {
+		log.Log.Error(err, "Error getVpcDnsDeployment")
+		return err
+	}
+	initContainers := &vpcDnsDeployment.Spec.Template.Spec.InitContainers[0]
+	for j := 0; j < len(initContainers.Command); j++ {
+		initContainers.Command[j] = strings.Replace(initContainers.Command[j], route, "", -1)
+	}
+	// for i := 0; i < len(initContainers); i++ {
+	// 	for j := 0; j < len(initContainers[i].Command); j++ {
+	// 		initContainers[i].Command[j] = strings.Replace(initContainers[i].Command[j], route, "", -1)
+	// 	}
+	// }
+	err = r.Client.Update(ctx, vpcDnsDeployment)
+	if err != nil {
+		log.Log.Error(err, "Error Update vpcDnsDeployment")
 		return err
 	}
 	return nil
