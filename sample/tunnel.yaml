@@ -4,7 +4,7 @@ metadata:
   name: ovn-gre0
   namespace: ns1
 spec:
-  clusterId: "cluster2"
-  gatewayName: "gw1"
+  clusterId: "cluster1" #对端集群名字
+  gatewayName: "gw1" #对端 vpc 网关名字
   interfaceAddr: "10.100.0.1/24" #隧道地址
-  natGwDp: "gw1" #vpc网关名字
+  natGwDp: "gw1" #本集群 vpc 网关名字

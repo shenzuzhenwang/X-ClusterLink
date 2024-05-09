@@ -136,21 +136,8 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 
 			//********************* Vpc-Gateway 节点重启，可用 pod 从 0 到 1
 			if oldStatefulSet.Status.AvailableReplicas == 0 && newStatefulSet.Status.AvailableReplicas == 1 {
-				// 找到所有natGwDp为Vpc-Gateway的VpcTunnel
 				natGw := strings.TrimPrefix(newStatefulSet.Name, "vpc-nat-gw-")
-				labelsSet := map[string]string{
-					"NatGwDp": natGw,
-				}
-				option := client.ListOptions{
-					LabelSelector: labels.SelectorFromSet(labelsSet),
-				}
-				err = r.Client.List(ctx, &vpcNatTunnelList, &option)
-				if err != nil {
-					log.Log.Error(err, "Error get vpcNatTunnel list")
-					return
-				}
-
-				// 更新 Vpc-gw 对应的 GatewayExIp
+				// 找到 Vpc-Gateway 对应的 GatewayExIp
 				gatewayExIp := &kubeovnv1.GatewayExIp{}
 				err := r.Client.Get(ctx, client.ObjectKey{
 					Name:      natGw + "." + r.ClusterId,
@@ -178,7 +165,19 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 					log.Log.Error(err, "Error update gatewayExIp")
 					return
 				}
-				// 更新 相关的vpcNatTunnel 状态
+				// 找到所有 localGateway 为 Vpc-Gateway 的 VpcTunnel
+				labelsSet := map[string]string{
+					"localGateway": natGw,
+				}
+				option := client.ListOptions{
+					LabelSelector: labels.SelectorFromSet(labelsSet),
+				}
+				err = r.Client.List(ctx, &vpcNatTunnelList, &option)
+				if err != nil {
+					log.Log.Error(err, "Error get vpcNatTunnel list")
+					return
+				}
+				// 更新 相关的 VpcNatTunnel 状态
 				for _, vpcTunnel := range vpcNatTunnelList.Items {
 
 					/*********************/

@@ -265,7 +265,7 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 		}
 	}
 
-	// 获取 VpcNatTunnel对应的对端GatewayExIp crd
+	// 获取 VpcNatTunnel 对应的对端 GatewayExIp crd
 	gatewayExIp := &kubeovnv1.GatewayExIp{}
 	err := r.Client.Get(ctx, client.ObjectKey{
 		Name:      vpcTunnel.Spec.GatewayName + "." + vpcTunnel.Spec.ClusterId,
@@ -322,6 +322,7 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 		if labels == nil {
 			labels = make(map[string]string)
 		}
+		labels["localGateway"] = vpcTunnel.Spec.NatGwDp
 		labels["remoteCluster"] = vpcTunnel.Spec.ClusterId
 		labels["remoteGateway"] = vpcTunnel.Spec.GatewayName
 		vpcTunnel.Labels = labels
@@ -398,9 +399,10 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 		}
 
 		// if ClusterId or GatewayName update, label need to update
-		if vpcTunnel.Labels["remoteCluster"] != vpcTunnel.Spec.ClusterId || vpcTunnel.Labels["remoteGateway"] != vpcTunnel.Spec.GatewayName {
+		if vpcTunnel.Labels["remoteCluster"] != vpcTunnel.Spec.ClusterId || vpcTunnel.Labels["remoteGateway"] != vpcTunnel.Spec.GatewayName || vpcTunnel.Labels["localGateway"] != vpcTunnel.Spec.NatGwDp {
 			vpcTunnel.Labels["remoteCluster"] = vpcTunnel.Spec.ClusterId
 			vpcTunnel.Labels["remoteGateway"] = vpcTunnel.Spec.GatewayName
+			vpcTunnel.Labels["localGateway"] = vpcTunnel.Spec.NatGwDp
 			err := r.Update(ctx, vpcTunnel)
 			if err != nil {
 				log.Log.Error(err, "Error Update vpcTunnel")
