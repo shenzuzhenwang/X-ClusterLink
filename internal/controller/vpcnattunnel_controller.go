@@ -69,12 +69,12 @@ func (r *VpcNatTunnelReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if !vpcTunnel.ObjectMeta.DeletionTimestamp.IsZero() {
 		// 记录操作开始
 		now := time.Now()
-		fmt.Println(now.Format("2024-05-09 11:27:43.000") + "删除 VpcNatTunnel:" + vpcTunnel.ObjectMeta.Name)
+		fmt.Println(now.Format("2024-05-09 11:27:43.000") + " 删除 VpcNatTunnel:" + vpcTunnel.ObjectMeta.Name)
 		return r.handleDelete(ctx, vpcTunnel)
 	}
 	// 记录操作开始
 	now := time.Now()
-	fmt.Println(now.Format("2024-05-09 11:27:43.000") + "创建/更新 VpcNatTunnel:" + vpcTunnel.ObjectMeta.Name)
+	fmt.Println(now.Format("2024-05-09 11:27:43.000") + " 创建/更新 VpcNatTunnel:" + vpcTunnel.ObjectMeta.Name)
 	return r.handleCreateOrUpdate(ctx, vpcTunnel)
 }
 
@@ -341,7 +341,7 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 
 		// 记录操作完成
 		now := time.Now()
-		fmt.Println(now.Format("2024-05-09 11:27:43.000") + "创建/更新 VpcNatTunnel 成功:" + vpcTunnel.ObjectMeta.Name)
+		fmt.Println(now.Format("2024-05-09 11:27:43.000") + " 创建/更新 VpcNatTunnel 成功:" + vpcTunnel.ObjectMeta.Name)
 
 		// if ClusterId or GatewayName update, then gatewayExIp.Spec.ExternalIP or gatewayExIp.Spec.GlobalNetCIDR will update too
 	} else if vpcTunnel.Status.Initialized && (vpcTunnel.Status.RemoteIP != gatewayExIp.Spec.ExternalIP ||
@@ -422,7 +422,7 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 
 		// 记录操作完成
 		now := time.Now()
-		fmt.Println(now.Format("2024-05-09 11:27:43.000") + "创建/更新 VpcNatTunnel 成功:" + vpcTunnel.ObjectMeta.Name)
+		fmt.Println(now.Format("2024-05-09 11:27:43.000") + " 创建/更新 VpcNatTunnel 成功:" + vpcTunnel.ObjectMeta.Name)
 	}
 
 	return ctrl.Result{}, nil
@@ -456,7 +456,7 @@ func (r *VpcNatTunnelReconciler) handleDelete(ctx context.Context, vpcTunnel *ku
 		}
 		// 记录删除操作完成
 		now := time.Now()
-		fmt.Println(now.Format("2024-05-09 11:27:43.000") + "删除 VpcNatTunnel 成功:" + vpcTunnel.ObjectMeta.Name)
+		fmt.Println(now.Format("2024-05-09 11:27:43.000") + " 删除 VpcNatTunnel 成功:" + vpcTunnel.ObjectMeta.Name)
 	}
 	return ctrl.Result{}, nil
 }

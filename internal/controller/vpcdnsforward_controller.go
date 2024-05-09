@@ -62,13 +62,13 @@ func (r *VpcDnsForwardReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if !vpcDns.ObjectMeta.DeletionTimestamp.IsZero() {
 		// 记录操作开始
 		now := time.Now()
-		fmt.Println(now.Format("2024-05-09 11:27:43.000") + "删除 VpcDnsForward:" + vpcDns.ObjectMeta.Name)
+		fmt.Println(now.Format("2024-05-09 11:27:43.000") + " 删除 VpcDnsForward:" + vpcDns.ObjectMeta.Name)
 
 		return r.handleDelete(ctx, vpcDns)
 	}
 	// 记录操作开始
 	now := time.Now()
-	fmt.Println(now.Format("2024-05-09 11:27:43.000") + "创建/更新 VpcDnsForward:" + vpcDns.ObjectMeta.Name)
+	fmt.Println(now.Format("2024-05-09 11:27:43.000") + " 创建/更新 VpcDnsForward:" + vpcDns.ObjectMeta.Name)
 
 	return r.handleCreateOrUpdate(ctx, vpcDns)
 }
@@ -90,7 +90,7 @@ func (r *VpcDnsForwardReconciler) handleCreateOrUpdate(ctx context.Context, vpcD
 
 	// 记录操作完成
 	now := time.Now()
-	fmt.Println(now.Format("2024-05-09 11:27:43.000") + "创建/更新 VpcDnsForward 成功:" + vpcDns.ObjectMeta.Name)
+	fmt.Println(now.Format("2024-05-09 11:27:43.000") + " 创建/更新 VpcDnsForward 成功:" + vpcDns.ObjectMeta.Name)
 
 	return ctrl.Result{}, nil
 }
@@ -110,7 +110,7 @@ func (r *VpcDnsForwardReconciler) handleDelete(ctx context.Context, vpcDns *kube
 		}
 		// 记录操作完成
 		now := time.Now()
-		fmt.Println(now.Format("2024-05-09 11:27:43.000") + "删除 VpcDnsForward 成功:" + vpcDns.ObjectMeta.Name)
+		fmt.Println(now.Format("2024-05-09 11:27:43.000") + " 删除 VpcDnsForward 成功:" + vpcDns.ObjectMeta.Name)
 	}
 	return ctrl.Result{}, nil
 }
