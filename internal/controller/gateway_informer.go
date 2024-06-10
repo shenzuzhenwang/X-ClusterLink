@@ -187,6 +187,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				for _, route := range vpc.Spec.StaticRoutes {
 					route.NextHopIP = GwStatefulSet.Spec.Template.Annotations["ovn.kubernetes.io/ip_address"]
 				}
+				klog.Info(vpc.Spec.StaticRoutes)
 				// 更新 Vpc 路由策略
 				err = r.Client.Update(ctx, vpc)
 				if err != nil {

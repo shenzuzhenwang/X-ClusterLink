@@ -377,6 +377,30 @@ rules:
   - update
   - watch
 - apiGroups:
+  - kubeovn.io
+  resources:
+  - vpc-nat-gateways
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - kubeovn.io
+  resources:
+  - vpcs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - kubeovn.ustc.io
   resources:
   - gatewayexips
