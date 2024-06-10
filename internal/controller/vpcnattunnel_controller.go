@@ -198,6 +198,14 @@ func (r *VpcNatTunnelReconciler) getGwExternIP(pod *corev1.Pod) (string, error) 
 	}
 }
 
+func (r *VpcNatTunnelReconciler) getGwIP(pod *corev1.Pod) (string, error) {
+	if IP, ok := pod.Annotations["ovn.kubernetes.io/ip_address"]; ok {
+		return IP, nil
+	} else {
+		return "", fmt.Errorf("no ovn-kubernetes ip")
+	}
+}
+
 func (r *VpcNatTunnelReconciler) getOvnGwIP(pod *corev1.Pod) (string, error) {
 	if gw, ok := pod.Annotations["ovn.kubernetes.io/gateway"]; ok {
 		return gw, nil
