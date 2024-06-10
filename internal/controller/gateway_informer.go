@@ -179,6 +179,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 					if statefulSet.Status.AvailableReplicas == 1 &&
 						statefulSet.Spec.Template.Annotations["ovn.kubernetes.io/logical_switch"] == newStatefulSet.Spec.Template.Annotations["ovn.kubernetes.io/logical_switch"] {
 						GwStatefulSet = &statefulSet
+						break
 					}
 				}
 				if GwStatefulSet.Name == "" {
@@ -187,7 +188,9 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				for _, route := range vpc.Spec.StaticRoutes {
 					route.NextHopIP = GwStatefulSet.Spec.Template.Annotations["ovn.kubernetes.io/ip_address"]
 				}
-				klog.Info(vpc.Spec.StaticRoutes)
+				for _, route := range vpc.Spec.StaticRoutes {
+					klog.Info(route)
+				}
 				// 更新 Vpc 路由策略
 				err = r.Client.Update(ctx, vpc)
 				if err != nil {
