@@ -30,6 +30,9 @@ type GatewayInformer struct {
 	Tunnelr   *VpcNatTunnelReconciler
 }
 
+//+kubebuilder:rbac:groups=kubeovn.io,resources=vpc-nat-gateways,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=kubeovn.io,resources=vpcs,verbs=get;list;watch;create;update;patch;delete
+
 func NewInformer(clusterId string, client client.Client, config *rest.Config, re *VpcNatTunnelReconciler) *GatewayInformer {
 	return &GatewayInformer{ClusterId: clusterId, Client: client, Config: config, Tunnelr: re}
 }
