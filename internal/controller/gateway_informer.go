@@ -138,11 +138,6 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 			//********************* Vpc-Gateway 节点宕掉，可用 pod 从 1 到 0 ，判断是不是正在使用的 Vpc-Gateway 宕掉，若是则切换 Vpc-Gateway
 			if oldStatefulSet.Status.AvailableReplicas == 1 && newStatefulSet.Status.AvailableReplicas == 0 {
 				natGwName := strings.TrimPrefix(newStatefulSet.Name, "vpc-nat-gw-")
-				pod, err := r.Tunnelr.getNatGwPod(natGwName)
-				if err != nil {
-					log.Log.Error(err, "Error get GwPod")
-					return
-				}
 				natGw := &ovn.VpcNatGateway{}
 				err = r.Client.Get(ctx, client.ObjectKey{
 					Name: natGwName,
@@ -160,13 +155,8 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 					log.Log.Error(err, "Error Get Vpc")
 					return
 				}
-				GwIP, err := r.Tunnelr.getGwIP(pod)
-				if err != nil {
-					log.Log.Error(err, "Error get GwIP")
-					return
-				}
-				routes := vpc.Spec.StaticRoutes
-				for _, route := range routes {
+				GwIP := newStatefulSet.Spec.Template.Annotations["ovn.kubernetes.io/ip_address"]
+				for _, route := range vpc.Spec.StaticRoutes {
 					// 若不是正在使用的 Vpc-Gateway 宕掉而是备用的Vpc-Gateway 宕掉，则不切换
 					if route.NextHopIP != GwIP {
 						return
@@ -188,10 +178,10 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 						GwStatefulSet = &statefulSet
 					}
 				}
-				if GwStatefulSet == nil {
+				if GwStatefulSet.Name == "" {
 					return
 				}
-				for _, route := range routes {
+				for _, route := range vpc.Spec.StaticRoutes {
 					route.NextHopIP = GwStatefulSet.Spec.Template.Annotations["ovn.kubernetes.io/ip_address"]
 				}
 				// 更新 Vpc 路由策略
@@ -214,14 +204,11 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				}
 				// 更新 相关的 VpcNatTunnel 状态
 				for _, vpcTunnel := range vpcNatTunnelList.Items {
-
-					/*********************/
 					podnext, err := r.Tunnelr.getNatGwPod(strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")) // find pod named Spec.NatGwDp
 					if err != nil {
 						log.Log.Error(err, "Error get GwPod")
 						return
 					}
-
 					GwExternIP, err := r.Tunnelr.getGwExternIP(podnext)
 					if err != nil {
 						log.Log.Error(err, "Error get GwExternIP")
