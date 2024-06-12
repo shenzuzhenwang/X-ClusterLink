@@ -96,7 +96,16 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 							log.Log.Error(err, "Error get submarinerCluster")
 							return
 						}
-						// 找到此gw pod的ExternIP
+						// 找到 Vpc-Gateway
+						Gw := &ovn.VpcNatGateway{}
+						err = r.Client.Get(ctx, client.ObjectKey{
+							Name: natGw,
+						}, Gw)
+						if err != nil {
+							log.Log.Error(err, "Error Get Vpc-Nat-Gateway")
+							return
+						}
+						// 找到此 gw 对应的 ExternIP
 						GwExternIP, err := r.Tunnelr.getGwExternIP(pod)
 						if err != nil {
 							log.Log.Error(err, "Error get GwExternIP")
@@ -104,11 +113,14 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 						}
 						gatewayExIp.Spec.ExternalIP = GwExternIP
 
-						// 创建gatewayExIp
+						// 创建 gatewayExIp
 						gatewayExIp.Name = natGw + "." + r.ClusterId
 						gatewayExIp.Namespace = pod.Namespace
 						gatewayExIp.Spec.GlobalNetCIDR = submarinerCluster.Spec.GlobalCIDR[0]
-
+						label := make(map[string]string)
+						label["localVpc"] = Gw.Spec.Vpc
+						label["localGateway"] = Gw.Name
+						gatewayExIp.Labels = label
 						err = r.Client.Create(ctx, gatewayExIp)
 						if err != nil {
 							log.Log.Error(err, "Error create gatewayExIp")
@@ -222,8 +234,8 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 						return
 					}
 					vpcTunnel.Status.InternalIP = GwExternIP
-					vpcTunnel.Status.NatGwDp = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
-					vpcTunnel.Spec.NatGwDp = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
+					vpcTunnel.Status.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
+					vpcTunnel.Spec.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
 
 					err = r.Tunnelr.execCommandInPod(podnext.Name, podnext.Namespace, "vpc-nat-gw", r.Tunnelr.genCreateTunnelCmd(&vpcTunnel))
 					if err != nil {

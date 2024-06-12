@@ -22,14 +22,14 @@ import (
 
 // VpcNatTunnelSpec defines the desired state of VpcNatTunnel
 type VpcNatTunnelSpec struct {
-	ClusterId     string `json:"clusterId"`
-	GatewayName   string `json:"gatewayName"`
+	RemoteCluster string `json:"remoteCluster"`
+	RemoteVpc     string `json:"remoteVpc"`
 	InterfaceAddr string `json:"interfaceAddr"`
-	NatGwDp       string `json:"natGwDp"`
+	LocalVpc      string `json:"localVpc"`
 	// +kubebuilder:default="gre"
-	Type string `json:"type,omitempty"`
-
+	Type     string `json:"type,omitempty"`
 	RemoteIP string `json:"remoteIp,omitempty"`
+	LocalGw  string `json:"localGw,omitempty"`
 }
 
 // VpcNatTunnelStatus defines the observed state of VpcNatTunnel
@@ -38,7 +38,7 @@ type VpcNatTunnelStatus struct {
 	InternalIP    string `json:"internalIp"`
 	RemoteIP      string `json:"remoteIp"`
 	InterfaceAddr string `json:"interfaceAddr"`
-	NatGwDp       string `json:"natGwDp"`
+	LocalGw       string `json:"localGw"`
 	Type          string `json:"type"`
 
 	GlobalnetCIDR       string   `json:"globalnetCIDR"`

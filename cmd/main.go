@@ -126,24 +126,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// VpcNatTunnel Reconciler
-	vpcNatTunnelReconciler := &controller.VpcNatTunnelReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}
-	if err = (vpcNatTunnelReconciler).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "VpcNatTunnel")
-		os.Exit(1)
-	}
-	// VpcDnsForward Reconciler
-	if err = (&controller.VpcDnsForwardReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "VpcDnsForward")
-		os.Exit(1)
-	}
-
 	// ************* submariner broker syner gwexip crd
 	cfg := mgr.GetConfig()
 
@@ -181,6 +163,25 @@ func main() {
 		os.Exit(1)
 	}
 	/************/
+
+	// VpcNatTunnel Reconciler
+	vpcNatTunnelReconciler := &controller.VpcNatTunnelReconciler{
+		ClusterId: agentSpec.ClusterID,
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+	}
+	if err = (vpcNatTunnelReconciler).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "VpcNatTunnel")
+		os.Exit(1)
+	}
+	// VpcDnsForward Reconciler
+	if err = (&controller.VpcDnsForwardReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "VpcDnsForward")
+		os.Exit(1)
+	}
 
 	// Gateway statefuleset Informer
 	if err := mgr.Add(controller.NewInformer(agentSpec.ClusterID, mgr.GetClient(), mgr.GetConfig(), vpcNatTunnelReconciler)); err != nil {

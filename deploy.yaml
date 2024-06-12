@@ -160,24 +160,26 @@ spec:
           spec:
             description: VpcNatTunnelSpec defines the desired state of VpcNatTunnel
             properties:
-              clusterId:
-                type: string
-              gatewayName:
-                type: string
               interfaceAddr:
                 type: string
-              natGwDp:
+              localGw:
+                type: string
+              localVpc:
+                type: string
+              remoteCluster:
                 type: string
               remoteIp:
+                type: string
+              remoteVpc:
                 type: string
               type:
                 default: gre
                 type: string
             required:
-            - clusterId
-            - gatewayName
             - interfaceAddr
-            - natGwDp
+            - localVpc
+            - remoteCluster
+            - remoteVpc
             type: object
           status:
             description: VpcNatTunnelStatus defines the observed state of VpcNatTunnel
@@ -194,7 +196,7 @@ spec:
                 type: string
               internalIp:
                 type: string
-              natGwDp:
+              localGw:
                 type: string
               ovnGwIP:
                 type: string
@@ -210,7 +212,7 @@ spec:
             - initialized
             - interfaceAddr
             - internalIp
-            - natGwDp
+            - localGw
             - ovnGwIP
             - remoteGlobalnetCIDR
             - remoteIp
