@@ -63,29 +63,35 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 		cache.Indexers{},
 	)
 	_, err = informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		//********************** add 方法对应 创建 Vpc-Gateway StatefulSet 时执行的操作，创建/更新对应的 GatewayExIp
+		//********************** add 方法对应 创建 Vpc-Gateway StatefulSet 时执行的操作，创建对应的 GatewayExIp
 		AddFunc: func(obj interface{}) {
 			statefulSet := obj.(*appsv1.StatefulSet)
 			// 通过 Vpc-Gateway 的名称找到对应的VpcNatTunnel，可能有多个VpcNatTunnel，因此获取VpcNatTunnelList
-			natGw := strings.TrimPrefix(statefulSet.Name, "vpc-nat-gw-")
+			gatewayName := strings.TrimPrefix(statefulSet.Name, "vpc-nat-gw-")
 			if statefulSet.Status.AvailableReplicas == 1 {
-
+				natGw := &ovn.VpcNatGateway{}
+				err = r.Client.Get(ctx, client.ObjectKey{
+					Name: gatewayName,
+				}, natGw)
+				if err != nil {
+					log.Log.Error(err, "Error Get Vpc-Nat-Gateway")
+					return
+				}
 				// 创建 Vpc-Gateway 对应的 GatewayExIp
 				gatewayExIp := &kubeovnv1.GatewayExIp{}
-				pod, err := r.Tunnelr.getNatGwPod(natGw)
+				pod, err := r.Tunnelr.getNatGwPod(gatewayName)
 				if err != nil {
 					log.Log.Error(err, "Error get gw pod")
 					return
 				}
 				// 寻找此 gw pod 对应的 GatewayExIp
 				err = r.Client.Get(ctx, client.ObjectKey{
-					Name:      natGw + "." + r.ClusterId,
+					Name:      natGw.Spec.Vpc + "." + r.ClusterId,
 					Namespace: "kube-system",
 				}, gatewayExIp)
 				if err != nil {
 					// 错误为没有找到对应的 gatewayExIp，则进行创建
 					if errors.IsNotFound(err) {
-
 						// 找到本集群的GlobalNetCIDR
 						submarinerCluster := &Submariner.Cluster{}
 						err := r.Client.Get(ctx, client.ObjectKey{
@@ -96,30 +102,20 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 							log.Log.Error(err, "Error get submarinerCluster")
 							return
 						}
-						// 找到 Vpc-Gateway
-						Gw := &ovn.VpcNatGateway{}
-						err = r.Client.Get(ctx, client.ObjectKey{
-							Name: natGw,
-						}, Gw)
-						if err != nil {
-							log.Log.Error(err, "Error Get Vpc-Nat-Gateway")
-							return
-						}
 						// 找到此 gw 对应的 ExternIP
 						GwExternIP, err := r.Tunnelr.getGwExternIP(pod)
 						if err != nil {
 							log.Log.Error(err, "Error get GwExternIP")
 							return
 						}
-						gatewayExIp.Spec.ExternalIP = GwExternIP
-
 						// 创建 gatewayExIp
-						gatewayExIp.Name = natGw + "." + r.ClusterId
+						gatewayExIp.Name = natGw.Spec.Vpc + "." + r.ClusterId
 						gatewayExIp.Namespace = pod.Namespace
+						gatewayExIp.Spec.ExternalIP = GwExternIP
 						gatewayExIp.Spec.GlobalNetCIDR = submarinerCluster.Spec.GlobalCIDR[0]
 						label := make(map[string]string)
-						label["localVpc"] = Gw.Spec.Vpc
-						label["localGateway"] = Gw.Name
+						label["localVpc"] = natGw.Spec.Vpc
+						label["localGateway"] = natGw.Name
 						gatewayExIp.Labels = label
 						err = r.Client.Create(ctx, gatewayExIp)
 						if err != nil {
@@ -128,20 +124,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 						}
 					}
 				} else {
-					// 资源找到，则进行更新而非创建
-					GwExternIP, err := r.Tunnelr.getGwExternIP(pod)
-					if err != nil {
-						log.Log.Error(err, "Error get GwExternIP")
-						return
-					}
-					// 更新ExternalIP
-					gatewayExIp.Spec.ExternalIP = GwExternIP
-					// 更改gatewayExIp
-					err = r.Client.Update(ctx, gatewayExIp)
-					if err != nil {
-						log.Log.Error(err, "Error update gatewayExIp")
-						return
-					}
+					// 若 gatewayExIp 存在，说明已经有网关在Vpc中运行，则新加的网关当作备用网关，不做处理
 				}
 			}
 		},
@@ -152,10 +135,10 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 
 			//********************* Vpc-Gateway 节点宕掉，可用 pod 从 1 到 0 ，判断是不是正在使用的 Vpc-Gateway 宕掉，若是则切换 Vpc-Gateway
 			if oldStatefulSet.Status.AvailableReplicas == 1 && newStatefulSet.Status.AvailableReplicas == 0 {
-				natGwName := strings.TrimPrefix(newStatefulSet.Name, "vpc-nat-gw-")
+				gatewayName := strings.TrimPrefix(newStatefulSet.Name, "vpc-nat-gw-")
 				natGw := &ovn.VpcNatGateway{}
 				err = r.Client.Get(ctx, client.ObjectKey{
-					Name: natGwName,
+					Name: gatewayName,
 				}, natGw)
 				if err != nil {
 					log.Log.Error(err, "Error Get Vpc-Nat-Gateway")
@@ -170,12 +153,18 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 					log.Log.Error(err, "Error Get Vpc")
 					return
 				}
-				GwIP := newStatefulSet.Spec.Template.Annotations["ovn.kubernetes.io/ip_address"]
-				for _, route := range vpc.Spec.StaticRoutes {
-					// 若不是正在使用的 Vpc-Gateway 宕掉而是备用的Vpc-Gateway 宕掉，则不切换
-					if route.NextHopIP != GwIP {
-						return
-					}
+				gatewayExIp := &kubeovnv1.GatewayExIp{}
+				err = r.Client.Get(ctx, client.ObjectKey{
+					Name:      vpcName + "." + r.ClusterId,
+					Namespace: "kube-system",
+				}, gatewayExIp)
+				if err != nil {
+					log.Log.Error(err, "Error get GatewayExIp")
+					return
+				}
+				// 若不是正在使用的 Vpc-Gateway 宕掉而是备用的Vpc-Gateway 宕掉，则不切换
+				if natGw.Name != gatewayExIp.Labels["localGateway"] {
+					return
 				}
 				// 寻找可用的 Vpc-Gateway
 				GwList := &appsv1.StatefulSetList{}
@@ -189,7 +178,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				for _, statefulSet := range GwList.Items {
 					// gateway 可用 pod 为 1 且 gateway 对应的 vpc 要与之前的一致
 					if statefulSet.Status.AvailableReplicas == 1 &&
-						statefulSet.Spec.Template.Annotations["ovn.kubernetes.io/logical_switch"] == newStatefulSet.Spec.Template.Annotations["ovn.kubernetes.io/logical_switch"] {
+						statefulSet.Spec.Template.Annotations["ovn.kubernetes.io/logical_router"] == newStatefulSet.Spec.Template.Annotations["ovn.kubernetes.io/logical_router"] {
 						GwStatefulSet = &statefulSet
 						break
 					}
@@ -200,8 +189,15 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				for _, route := range vpc.Spec.StaticRoutes {
 					route.NextHopIP = GwStatefulSet.Spec.Template.Annotations["ovn.kubernetes.io/ip_address"]
 				}
-				for _, route := range vpc.Spec.StaticRoutes {
-					klog.Info(route)
+				podNext, err := r.Tunnelr.getNatGwPod(strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")) // find pod named Spec.NatGwDp
+				if err != nil {
+					log.Log.Error(err, "Error get GwPod")
+					return
+				}
+				GwExternIP, err := r.Tunnelr.getGwExternIP(podNext)
+				if err != nil {
+					log.Log.Error(err, "Error get GwExternIP")
+					return
 				}
 				// 更新 Vpc 路由策略
 				err = r.Client.Update(ctx, vpc)
@@ -209,9 +205,18 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 					log.Log.Error(err, "Error update Vpc")
 					return
 				}
+				// 更新 GatewayExIp
+				gatewayExIp.Spec.ExternalIP = GwExternIP
+				gatewayExIp.Labels["localGateway"] = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
+
+				err = r.Client.Update(ctx, gatewayExIp)
+				if err != nil {
+					log.Log.Error(err, "Error update gatewayExIp")
+					return
+				}
 				// 找到所有 localGateway 为 之前 Vpc-Gateway 的 VpcTunnel
 				labelsSet := map[string]string{
-					"localGateway": natGwName,
+					"localGateway": gatewayName,
 				}
 				option := client.ListOptions{
 					LabelSelector: labels.SelectorFromSet(labelsSet),
@@ -221,97 +226,156 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 					log.Log.Error(err, "Error get vpcNatTunnel list")
 					return
 				}
-				// 更新 相关的 VpcNatTunnel 状态
+				// 更新 相关的 VpcNatTunnel
 				for _, vpcTunnel := range vpcNatTunnelList.Items {
-					podnext, err := r.Tunnelr.getNatGwPod(strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")) // find pod named Spec.NatGwDp
-					if err != nil {
-						log.Log.Error(err, "Error get GwPod")
-						return
-					}
-					GwExternIP, err := r.Tunnelr.getGwExternIP(podnext)
-					if err != nil {
-						log.Log.Error(err, "Error get GwExternIP")
-						return
-					}
 					vpcTunnel.Status.InternalIP = GwExternIP
 					vpcTunnel.Status.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
 					vpcTunnel.Spec.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
 
-					err = r.Tunnelr.execCommandInPod(podnext.Name, podnext.Namespace, "vpc-nat-gw", r.Tunnelr.genCreateTunnelCmd(&vpcTunnel))
+					err = r.Tunnelr.execCommandInPod(podNext.Name, podNext.Namespace, "vpc-nat-gw", r.Tunnelr.genCreateTunnelCmd(&vpcTunnel))
 					if err != nil {
 						log.Log.Error(err, "Error get exec CreateTunnelCmd")
 						return
 					}
-					err = r.Tunnelr.execCommandInPod(podnext.Name, podnext.Namespace, "vpc-nat-gw", genGlobalnetRoute(&vpcTunnel))
+					err = r.Tunnelr.execCommandInPod(podNext.Name, podNext.Namespace, "vpc-nat-gw", genGlobalnetRoute(&vpcTunnel))
 					if err != nil {
 						log.Log.Error(err, "Error get exec GlobalnetRoute")
 						return
 					}
-
 					if err = r.Tunnelr.Update(ctx, &vpcTunnel); err != nil {
 						log.Log.Error(err, "Error update vpcTunnel")
 						return
 					}
-
 					if err = r.Tunnelr.Status().Update(ctx, &vpcTunnel); err != nil {
 						log.Log.Error(err, "Error update vpcTunnel Status")
 						return
 					}
 				}
 			}
-			//********************* Vpc-Gateway 节点重启，可用 pod 从 0 到 1
-			if oldStatefulSet.Status.AvailableReplicas == 0 && newStatefulSet.Status.AvailableReplicas == 1 {
-				natGw := strings.TrimPrefix(newStatefulSet.Name, "vpc-nat-gw-")
-				// 找到 Vpc-Gateway 对应的 GatewayExIp
-				gatewayExIp := &kubeovnv1.GatewayExIp{}
-				err := r.Client.Get(ctx, client.ObjectKey{
-					Name:      natGw + "." + r.ClusterId,
-					Namespace: "kube-system",
-				}, gatewayExIp)
-				if err != nil {
-					log.Log.Error(err, "Error get GatewayExIp")
-					return
-				}
-				// 更新 Vpc-Gateway 对应的 GatewayExIp
-				pod, err := r.Tunnelr.getNatGwPod(natGw)
-				if err != nil {
-					log.Log.Error(err, "Error get GwPod")
-					return
-				}
-				GwExternIP, err := r.Tunnelr.getGwExternIP(pod)
-				if err != nil {
-					log.Log.Error(err, "Error get GwExternIP")
-					return
-				}
-				gatewayExIp.Spec.ExternalIP = GwExternIP
-
-				err = r.Client.Update(ctx, gatewayExIp)
-				if err != nil {
-					log.Log.Error(err, "Error update gatewayExIp")
-					return
-				}
-			}
 		},
-		//*********************** delete 方法对应删除 Vpc-Gateway StatefulSet 时执行的操作，删除 Vpc-Gateway 对应的 GatewayExIp
+		//*********************** delete 方法对应删除 Vpc-Gateway StatefulSet 时执行的操作
 		DeleteFunc: func(obj interface{}) {
 			statefulSet := obj.(*appsv1.StatefulSet)
 
-			// 通过 Vpc-Gateway 的名称找到对应的 GatewayExIp
-			natGw := strings.TrimPrefix(statefulSet.Name, "vpc-nat-gw-")
-			// 删除 Vpc-Gateway 对应的 GatewayExIp
+			// 通过 Vpc-Gateway 的名称找到对应的 Vpc-Gateway
+			gatewayName := strings.TrimPrefix(statefulSet.Name, "vpc-nat-gw-")
+			natGw := &ovn.VpcNatGateway{}
+			err = r.Client.Get(ctx, client.ObjectKey{
+				Name: gatewayName,
+			}, natGw)
+			if err != nil {
+				log.Log.Error(err, "Error Get Vpc-Nat-Gateway")
+				return
+			}
+			// 通过 Vpc-Gateway 找到对应的 GatewayExIp
 			gatewayExIp := &kubeovnv1.GatewayExIp{}
 			err := r.Client.Get(ctx, client.ObjectKey{
-				Name:      natGw + "." + r.ClusterId,
+				Name:      natGw.Spec.Vpc + "." + r.ClusterId,
 				Namespace: "kube-system",
 			}, gatewayExIp)
 			if err != nil {
 				log.Log.Error(err, "Error get gatewayExIp")
 				return
 			}
-			err = r.Client.Delete(ctx, gatewayExIp)
-			if err != nil {
-				log.Log.Error(err, "Error delete gatewayExIp")
-				return
+			if natGw.Name == gatewayExIp.Labels["localGateway"] {
+				// 若删除的网关是正在使用的
+				vpcName := natGw.Spec.Vpc
+				vpc := &ovn.Vpc{}
+				err = r.Client.Get(ctx, client.ObjectKey{
+					Name: vpcName,
+				}, vpc)
+				if err != nil {
+					log.Log.Error(err, "Error Get Vpc")
+					return
+				}
+				// 寻找可用的 Vpc-Gateway
+				GwList := &appsv1.StatefulSetList{}
+				err = r.Client.List(ctx, GwList, client.InNamespace("kube-system"), client.MatchingLabels{"ovn.kubernetes.io/vpc-nat-gw": "true"})
+				if err != nil {
+					log.Log.Error(err, "Error get StatefulSetList")
+					return
+				}
+				GwStatefulSet := &appsv1.StatefulSet{}
+				// find Vpc-Gateway which status is Active
+				for _, st := range GwList.Items {
+					// gateway 可用 pod 为 1 且 gateway 对应的 vpc 要与之前的一致
+					if st.Status.AvailableReplicas == 1 &&
+						st.Spec.Template.Annotations["ovn.kubernetes.io/logical_router"] == statefulSet.Spec.Template.Annotations["ovn.kubernetes.io/logical_router"] {
+						GwStatefulSet = &st
+						break
+					}
+				}
+				if GwStatefulSet.Name == "" {
+					// 若没有可用的备用网关，直接删除gatewayExIp
+					err = r.Client.Delete(ctx, gatewayExIp)
+					if err != nil {
+						log.Log.Error(err, "Error delete gatewayExIp")
+						return
+					}
+				}
+				for _, route := range vpc.Spec.StaticRoutes {
+					route.NextHopIP = GwStatefulSet.Spec.Template.Annotations["ovn.kubernetes.io/ip_address"]
+				}
+				podNext, err := r.Tunnelr.getNatGwPod(strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")) // find pod named Spec.NatGwDp
+				if err != nil {
+					log.Log.Error(err, "Error get GwPod")
+					return
+				}
+				GwExternIP, err := r.Tunnelr.getGwExternIP(podNext)
+				if err != nil {
+					log.Log.Error(err, "Error get GwExternIP")
+					return
+				}
+				// 更新 Vpc 路由策略
+				err = r.Client.Update(ctx, vpc)
+				if err != nil {
+					log.Log.Error(err, "Error update Vpc")
+					return
+				}
+				// 更新 GatewayExIp
+				gatewayExIp := &kubeovnv1.GatewayExIp{}
+				err = r.Client.Get(ctx, client.ObjectKey{
+					Name:      vpcName + "." + r.ClusterId,
+					Namespace: "kube-system",
+				}, gatewayExIp)
+				if err != nil {
+					log.Log.Error(err, "Error get GatewayExIp")
+					return
+				}
+				gatewayExIp.Spec.ExternalIP = GwExternIP
+				gatewayExIp.Labels["localGateway"] = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
+				err = r.Client.Update(ctx, gatewayExIp)
+				if err != nil {
+					log.Log.Error(err, "Error update gatewayExIp")
+					return
+				}
+				// 更新 相关的 VpcNatTunnel
+				for _, vpcTunnel := range vpcNatTunnelList.Items {
+					vpcTunnel.Status.InternalIP = GwExternIP
+					vpcTunnel.Status.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
+					vpcTunnel.Spec.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
+
+					err = r.Tunnelr.execCommandInPod(podNext.Name, podNext.Namespace, "vpc-nat-gw", r.Tunnelr.genCreateTunnelCmd(&vpcTunnel))
+					if err != nil {
+						log.Log.Error(err, "Error get exec CreateTunnelCmd")
+						return
+					}
+					err = r.Tunnelr.execCommandInPod(podNext.Name, podNext.Namespace, "vpc-nat-gw", genGlobalnetRoute(&vpcTunnel))
+					if err != nil {
+						log.Log.Error(err, "Error get exec GlobalnetRoute")
+						return
+					}
+					if err = r.Tunnelr.Update(ctx, &vpcTunnel); err != nil {
+						log.Log.Error(err, "Error update vpcTunnel")
+						return
+					}
+					if err = r.Tunnelr.Status().Update(ctx, &vpcTunnel); err != nil {
+						log.Log.Error(err, "Error update vpcTunnel Status")
+						return
+					}
+				}
+			} else {
+				// 若删除的网关的备用的，则不处理
 			}
 		},
 	})
