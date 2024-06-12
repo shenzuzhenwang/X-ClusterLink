@@ -27,14 +27,14 @@ type GatewayInformer struct {
 	ClusterId string
 	Client    client.Client
 	Config    *rest.Config
-	Tunnelr   *VpcNatTunnelReconciler
+	Tunnel    *VpcNatTunnelReconciler
 }
 
 //+kubebuilder:rbac:groups=kubeovn.io,resources=vpc-nat-gateways,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=kubeovn.io,resources=vpcs,verbs=get;list;watch;create;update;patch;delete
 
 func NewInformer(clusterId string, client client.Client, config *rest.Config, re *VpcNatTunnelReconciler) *GatewayInformer {
-	return &GatewayInformer{ClusterId: clusterId, Client: client, Config: config, Tunnelr: re}
+	return &GatewayInformer{ClusterId: clusterId, Client: client, Config: config, Tunnel: re}
 }
 
 func (r *GatewayInformer) Start(ctx context.Context) error {
@@ -63,7 +63,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 		cache.Indexers{},
 	)
 	_, err = informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		//********************** add 方法对应 创建 Vpc-Gateway StatefulSet 时执行的操作，创建对应的 GatewayExIp
+		//  add 方法对应 创建 Vpc-Gateway StatefulSet 时执行的操作，创建对应的 GatewayExIp
 		AddFunc: func(obj interface{}) {
 			statefulSet := obj.(*appsv1.StatefulSet)
 			// 通过 Vpc-Gateway 的名称找到对应的VpcNatTunnel，可能有多个VpcNatTunnel，因此获取VpcNatTunnelList
@@ -79,7 +79,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				}
 				// 创建 Vpc-Gateway 对应的 GatewayExIp
 				gatewayExIp := &kubeovnv1.GatewayExIp{}
-				pod, err := r.Tunnelr.getNatGwPod(gatewayName)
+				pod, err := r.Tunnel.getNatGwPod(gatewayName)
 				if err != nil {
 					log.Log.Error(err, "Error get gw pod")
 					return
@@ -103,7 +103,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 							return
 						}
 						// 找到此 gw 对应的 ExternIP
-						GwExternIP, err := r.Tunnelr.getGwExternIP(pod)
+						GwExternIP, err := r.Tunnel.getGwExternIP(pod)
 						if err != nil {
 							log.Log.Error(err, "Error get GwExternIP")
 							return
@@ -133,7 +133,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 			oldStatefulSet := old.(*appsv1.StatefulSet)
 			newStatefulSet := new.(*appsv1.StatefulSet)
 
-			//********************* Vpc-Gateway 节点宕掉，可用 pod 从 1 到 0 ，判断是不是正在使用的 Vpc-Gateway 宕掉，若是则切换 Vpc-Gateway
+			// Vpc-Gateway 节点宕掉，可用 pod 从 1 到 0 ，判断是不是正在使用的 Vpc-Gateway 宕掉，若是则切换 Vpc-Gateway
 			if oldStatefulSet.Status.AvailableReplicas == 1 && newStatefulSet.Status.AvailableReplicas == 0 {
 				gatewayName := strings.TrimPrefix(newStatefulSet.Name, "vpc-nat-gw-")
 				natGw := &ovn.VpcNatGateway{}
@@ -189,12 +189,12 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				for _, route := range vpc.Spec.StaticRoutes {
 					route.NextHopIP = GwStatefulSet.Spec.Template.Annotations["ovn.kubernetes.io/ip_address"]
 				}
-				podNext, err := r.Tunnelr.getNatGwPod(strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")) // find pod named Spec.NatGwDp
+				podNext, err := r.Tunnel.getNatGwPod(strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")) // find pod named Spec.NatGwDp
 				if err != nil {
 					log.Log.Error(err, "Error get GwPod")
 					return
 				}
-				GwExternIP, err := r.Tunnelr.getGwExternIP(podNext)
+				GwExternIP, err := r.Tunnel.getGwExternIP(podNext)
 				if err != nil {
 					log.Log.Error(err, "Error get GwExternIP")
 					return
@@ -232,28 +232,28 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 					vpcTunnel.Status.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
 					vpcTunnel.Spec.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
 
-					err = r.Tunnelr.execCommandInPod(podNext.Name, podNext.Namespace, "vpc-nat-gw", r.Tunnelr.genCreateTunnelCmd(&vpcTunnel))
+					err = r.Tunnel.execCommandInPod(podNext.Name, podNext.Namespace, "vpc-nat-gw", r.Tunnel.genCreateTunnelCmd(&vpcTunnel))
 					if err != nil {
 						log.Log.Error(err, "Error get exec CreateTunnelCmd")
 						return
 					}
-					err = r.Tunnelr.execCommandInPod(podNext.Name, podNext.Namespace, "vpc-nat-gw", genGlobalnetRoute(&vpcTunnel))
+					err = r.Tunnel.execCommandInPod(podNext.Name, podNext.Namespace, "vpc-nat-gw", genGlobalnetRoute(&vpcTunnel))
 					if err != nil {
-						log.Log.Error(err, "Error get exec GlobalnetRoute")
+						log.Log.Error(err, "Error get exec GlobalNetRoute")
 						return
 					}
-					if err = r.Tunnelr.Update(ctx, &vpcTunnel); err != nil {
+					if err = r.Tunnel.Update(ctx, &vpcTunnel); err != nil {
 						log.Log.Error(err, "Error update vpcTunnel")
 						return
 					}
-					if err = r.Tunnelr.Status().Update(ctx, &vpcTunnel); err != nil {
+					if err = r.Tunnel.Status().Update(ctx, &vpcTunnel); err != nil {
 						log.Log.Error(err, "Error update vpcTunnel Status")
 						return
 					}
 				}
 			}
 		},
-		//*********************** delete 方法对应删除 Vpc-Gateway StatefulSet 时执行的操作
+		//  delete 方法对应删除 Vpc-Gateway StatefulSet 时执行的操作
 		DeleteFunc: func(obj interface{}) {
 			statefulSet := obj.(*appsv1.StatefulSet)
 
@@ -316,12 +316,12 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				for _, route := range vpc.Spec.StaticRoutes {
 					route.NextHopIP = GwStatefulSet.Spec.Template.Annotations["ovn.kubernetes.io/ip_address"]
 				}
-				podNext, err := r.Tunnelr.getNatGwPod(strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")) // find pod named Spec.NatGwDp
+				podNext, err := r.Tunnel.getNatGwPod(strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")) // find pod named Spec.NatGwDp
 				if err != nil {
 					log.Log.Error(err, "Error get GwPod")
 					return
 				}
-				GwExternIP, err := r.Tunnelr.getGwExternIP(podNext)
+				GwExternIP, err := r.Tunnel.getGwExternIP(podNext)
 				if err != nil {
 					log.Log.Error(err, "Error get GwExternIP")
 					return
@@ -355,21 +355,21 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 					vpcTunnel.Status.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
 					vpcTunnel.Spec.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
 
-					err = r.Tunnelr.execCommandInPod(podNext.Name, podNext.Namespace, "vpc-nat-gw", r.Tunnelr.genCreateTunnelCmd(&vpcTunnel))
+					err = r.Tunnel.execCommandInPod(podNext.Name, podNext.Namespace, "vpc-nat-gw", r.Tunnel.genCreateTunnelCmd(&vpcTunnel))
 					if err != nil {
 						log.Log.Error(err, "Error get exec CreateTunnelCmd")
 						return
 					}
-					err = r.Tunnelr.execCommandInPod(podNext.Name, podNext.Namespace, "vpc-nat-gw", genGlobalnetRoute(&vpcTunnel))
+					err = r.Tunnel.execCommandInPod(podNext.Name, podNext.Namespace, "vpc-nat-gw", genGlobalnetRoute(&vpcTunnel))
 					if err != nil {
-						log.Log.Error(err, "Error get exec GlobalnetRoute")
+						log.Log.Error(err, "Error get exec GlobalNetRoute")
 						return
 					}
-					if err = r.Tunnelr.Update(ctx, &vpcTunnel); err != nil {
+					if err = r.Tunnel.Update(ctx, &vpcTunnel); err != nil {
 						log.Log.Error(err, "Error update vpcTunnel")
 						return
 					}
-					if err = r.Tunnelr.Status().Update(ctx, &vpcTunnel); err != nil {
+					if err = r.Tunnel.Status().Update(ctx, &vpcTunnel); err != nil {
 						log.Log.Error(err, "Error update vpcTunnel Status")
 						return
 					}
