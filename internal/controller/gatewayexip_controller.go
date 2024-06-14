@@ -153,11 +153,11 @@ func (c *Controller) onRemoteGatewayExIpSynced(obj runtime.Object, op syncer.Ope
 	// find vpcNatTunnels which use this GatewayExIp
 	gatewayExIp := obj.(*kubeovnv1.GatewayExIp)
 	splitStrings := strings.SplitN(gatewayExIp.Name, ".", 2)
-	gatewayName := splitStrings[0]
-	clusterId := splitStrings[1]
+	remoteVpc := splitStrings[0]
+	remoteCluster := splitStrings[1]
 
 	options := metav1.ListOptions{
-		LabelSelector: fmt.Sprintf("remoteCluster=%s,remoteGateway=%s", clusterId, gatewayName),
+		LabelSelector: fmt.Sprintf("remoteCluster=%s,remoteVpc=%s", remoteCluster, remoteVpc),
 	}
 	vpcNatTunnelList := &kubeovnv1.VpcNatTunnelList{}
 	objList, err := c.syncer.GetLocalClient().Resource(schema.GroupVersionResource{
@@ -173,7 +173,7 @@ func (c *Controller) onRemoteGatewayExIpSynced(obj runtime.Object, op syncer.Ope
 
 	// update vpcNatTunnels, and maybe reconstruction tunnel
 	for _, vpcNatTunnel := range vpcNatTunnelList.Items {
-		vpcNatTunnel.Spec.RemoteIP = gatewayExIp.Spec.ExternalIP // 感觉只是触发了handleCreateOrUpdate而已 TODO：更改
+		vpcNatTunnel.Spec.RemoteIP = gatewayExIp.Spec.ExternalIP
 		data := &unstructured.Unstructured{}
 		utilruntime.Must(c.scheme.Convert(&vpcNatTunnel, data, nil))
 		_, err = c.syncer.GetLocalClient().Resource(schema.GroupVersionResource{
