@@ -112,13 +112,13 @@ Pod Template:
 apiVersion: "kubeovn.ustc.io/v1"
 kind: VpcNatTunnel
 metadata:
-  name: ovn-gre0
-  namespace: ns1
+  name: gre1
+  namespace: ns2
 spec:
-  clusterId: "cluster2" #互联的对端集群ID
-  gatewayName: "gw1"    # 互联的对端集群 vpc-gw 名字
+  remoteCluster: "cluster2"      #对端集群
+  remoteVpc: "test-vpc-2"        #对端集群 vpc
   interfaceAddr: "10.100.0.1/24" #隧道地址
-  natGwDp: "gw1" #本集群 vpc-gw 名字
+  localVpc: "test-vpc-2"         #本集群 vpc
 ```
 
 ```sh
@@ -164,10 +164,10 @@ kubectl delete -f tunnel.yaml
 apiVersion: "kubeovn.ustc.io/v1"
 kind: GatewayExIp
 metadata:
-  name: gw1-cluster1    # 本端隧道的vpc-gw name + 本端集群的submariner cluster id
-  namespace: kube-system
+  name: test-vpc-2.cluster1
+  namespace: ns2
 spec:
-  externalip: 172.50.16.99    # 本端隧道的vpc-gw的物理网络IP
+  externalip: 172.50.16.99
   globalnetcidr: 242.1.0.0/16    # 本端集群的submariner GlobalnetCIDR
 ```
 

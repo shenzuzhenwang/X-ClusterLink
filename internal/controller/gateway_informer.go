@@ -92,6 +92,21 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				if err != nil {
 					// 错误为没有找到对应的 gatewayExIp，则进行创建
 					if errors.IsNotFound(err) {
+						vpcName := natGw.Spec.Vpc
+						vpc := &ovn.Vpc{}
+						err = r.Client.Get(ctx, client.ObjectKey{
+							Name: vpcName,
+						}, vpc)
+						if err != nil {
+							log.Log.Error(err, "Error Get Vpc")
+							return
+						}
+						for _, router := range vpc.Spec.StaticRoutes {
+							// 若 VPC 路由不是流向当前 Vpc-Gateway，则不添加该Vpc-Gateway的GatewayExIp
+							if router.NextHopIP != natGw.Spec.LanIP {
+								return
+							}
+						}
 						// 找到本集群的GlobalNetCIDR
 						submarinerCluster := &Submariner.Cluster{}
 						err := r.Client.Get(ctx, client.ObjectKey{
@@ -249,6 +264,90 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 					if err = r.Tunnel.Status().Update(ctx, &vpcTunnel); err != nil {
 						log.Log.Error(err, "Error update vpcTunnel Status")
 						return
+					}
+				}
+			}
+			// Vpc-Gateway 节点重启，可用 pod 从 0 到 1，这里主要处理单网关的情况，多网关直接在上面处理完成了
+			if oldStatefulSet.Status.AvailableReplicas == 0 && newStatefulSet.Status.AvailableReplicas == 1 {
+				gatewayName := strings.TrimPrefix(newStatefulSet.Name, "vpc-nat-gw-")
+				natGw := &ovn.VpcNatGateway{}
+				err = r.Client.Get(ctx, client.ObjectKey{
+					Name: gatewayName,
+				}, natGw)
+				if err != nil {
+					log.Log.Error(err, "Error Get Vpc-Nat-Gateway")
+					return
+				}
+				vpcName := natGw.Spec.Vpc
+				vpc := &ovn.Vpc{}
+				err = r.Client.Get(ctx, client.ObjectKey{
+					Name: vpcName,
+				}, vpc)
+				if err != nil {
+					log.Log.Error(err, "Error Get Vpc")
+					return
+				}
+				gatewayExIp := &kubeovnv1.GatewayExIp{}
+				err = r.Client.Get(ctx, client.ObjectKey{
+					Name:      vpcName + "." + r.ClusterId,
+					Namespace: "kube-system",
+				}, gatewayExIp)
+				if err != nil {
+					log.Log.Error(err, "Error get GatewayExIp")
+					return
+				}
+				if natGw.Name == gatewayExIp.Labels["localGateway"] {
+					podNext, err := r.Tunnel.getNatGwPod(gatewayName) // find pod named Spec.NatGwDp
+					if err != nil {
+						log.Log.Error(err, "Error get GwPod")
+						return
+					}
+					GwExternIP, err := r.Tunnel.getGwExternIP(podNext)
+					if err != nil {
+						log.Log.Error(err, "Error get GwExternIP")
+						return
+					}
+					// 更新 GatewayExIp
+					gatewayExIp.Spec.ExternalIP = GwExternIP
+					err = r.Client.Update(ctx, gatewayExIp)
+					if err != nil {
+						log.Log.Error(err, "Error update gatewayExIp")
+						return
+					}
+					// 找到所有 localGateway 为 之前 Vpc-Gateway 的 VpcTunnel
+					labelsSet := map[string]string{
+						"localGateway": gatewayName,
+					}
+					option := client.ListOptions{
+						LabelSelector: labels.SelectorFromSet(labelsSet),
+					}
+					err = r.Client.List(ctx, &vpcNatTunnelList, &option)
+					if err != nil {
+						log.Log.Error(err, "Error get vpcNatTunnel list")
+						return
+					}
+					// 更新 相关的 VpcNatTunnel
+					for _, vpcTunnel := range vpcNatTunnelList.Items {
+						vpcTunnel.Status.InternalIP = GwExternIP
+
+						err = r.Tunnel.execCommandInPod(podNext.Name, podNext.Namespace, "vpc-nat-gw", r.Tunnel.genCreateTunnelCmd(&vpcTunnel))
+						if err != nil {
+							log.Log.Error(err, "Error get exec CreateTunnelCmd")
+							return
+						}
+						err = r.Tunnel.execCommandInPod(podNext.Name, podNext.Namespace, "vpc-nat-gw", genGlobalnetRoute(&vpcTunnel))
+						if err != nil {
+							log.Log.Error(err, "Error get exec GlobalNetRoute")
+							return
+						}
+						if err = r.Tunnel.Update(ctx, &vpcTunnel); err != nil {
+							log.Log.Error(err, "Error update vpcTunnel")
+							return
+						}
+						if err = r.Tunnel.Status().Update(ctx, &vpcTunnel); err != nil {
+							log.Log.Error(err, "Error update vpcTunnel Status")
+							return
+						}
 					}
 				}
 			}
