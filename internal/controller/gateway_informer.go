@@ -229,9 +229,9 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 					log.Log.Error(err, "Error update gatewayExIp")
 					return
 				}
-				// 找到所有 localGateway 为 之前 Vpc-Gateway 的 VpcTunnel
+				// 找到所有 localVpc 为 当前 Vpc 的 VpcTunnel
 				labelsSet := map[string]string{
-					"localGateway": gatewayName,
+					"localVpc": vpcName,
 				}
 				option := client.ListOptions{
 					LabelSelector: labels.SelectorFromSet(labelsSet),
@@ -314,9 +314,9 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 						log.Log.Error(err, "Error update gatewayExIp")
 						return
 					}
-					// 找到所有 localGateway 为 之前 Vpc-Gateway 的 VpcTunnel
+					// 找到所有 localVpc 为 当前 Vpc 的 VpcTunnel
 					labelsSet := map[string]string{
-						"localGateway": gatewayName,
+						"localVpc": vpcName,
 					}
 					option := client.ListOptions{
 						LabelSelector: labels.SelectorFromSet(labelsSet),
