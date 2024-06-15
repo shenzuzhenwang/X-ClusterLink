@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"k8s.io/klog/v2"
 	kubeovnv1 "kubeovn-multivpc/api/v1"
 	"kubeovn-multivpc/internal/tunnel/factory"
 	"strings"
@@ -230,35 +231,6 @@ func (r *VpcNatTunnelReconciler) genDeleteTunnelCmd(tunnel *kubeovnv1.VpcNatTunn
 	return r.tunnelOpFact.CreateTunnelOperation(tunnel).DeleteCmd()
 }
 
-// update PodGwIP GlobalEgressIP GlobalnetCIDR GwExternIP
-func (r *VpcNatTunnelReconciler) updateTunnelStatus(vpcTunnel *kubeovnv1.VpcNatTunnel, pod *corev1.Pod) error {
-	GlobalNetCIDR, err := r.getGlobalnetCIDR()
-	if err != nil {
-		log.Log.Error(err, "Error get local GlobalNetCIDR")
-		return err
-	}
-	vpcTunnel.Status.GlobalnetCIDR = GlobalNetCIDR
-	ovnGwIP, err := r.getOvnGwIP(pod)
-	if err != nil {
-		log.Log.Error(err, "Error get local PodGwIP")
-		return err
-	}
-	vpcTunnel.Status.OvnGwIP = ovnGwIP
-	GlobalEgressIP, err := r.getGlobalEgressIP()
-	if err != nil {
-		log.Log.Error(err, "Error get local GlobalEgressIP")
-		return err
-	}
-	vpcTunnel.Status.GlobalEgressIP = GlobalEgressIP
-	GwExternIP, err := getGwExternIP(pod)
-	if err != nil {
-		log.Log.Error(err, "Error get local GwExternIP")
-		return err
-	}
-	vpcTunnel.Status.InternalIP = GwExternIP
-	return nil
-}
-
 func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTunnel *kubeovnv1.VpcNatTunnel) (ctrl.Result, error) {
 	if !containsString(vpcTunnel.ObjectMeta.Finalizers, "tunnel.finalizer.ustc.io") {
 		controllerutil.AddFinalizer(vpcTunnel, "tunnel.finalizer.ustc.io")
@@ -310,11 +282,33 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			return ctrl.Result{}, err
 		}
 
-		err = r.updateTunnelStatus(vpcTunnel, gwPod)
+		GlobalNetCIDR, err := r.getGlobalnetCIDR()
 		if err != nil {
+			log.Log.Error(err, "Error get local GlobalNetCIDR")
+			return ctrl.Result{}, err
+		}
+		ovnGwIP, err := r.getOvnGwIP(gwPod)
+		if err != nil {
+			log.Log.Error(err, "Error get local PodGwIP")
+			return ctrl.Result{}, err
+		}
+		GlobalEgressIP, err := r.getGlobalEgressIP()
+		if err != nil {
+			log.Log.Error(err, "Error get local GlobalEgressIP")
+			return ctrl.Result{}, err
+		}
+		GwExternIP, err := getGwExternIP(gwPod)
+		if err != nil {
+			log.Log.Error(err, "Error get local GwExternIP")
 			return ctrl.Result{}, err
 		}
 
+		klog.Info(GlobalEgressIP)
+
+		vpcTunnel.Status.GlobalnetCIDR = GlobalNetCIDR
+		vpcTunnel.Status.OvnGwIP = ovnGwIP
+		vpcTunnel.Status.GlobalEgressIP = GlobalEgressIP
+		vpcTunnel.Status.InternalIP = GwExternIP
 		vpcTunnel.Spec.InternalIP = vpcTunnel.Status.InternalIP
 
 		err = r.execCommandInPod(gwPod.Name, gwPod.Namespace, "vpc-nat-gw", r.genCreateTunnelCmd(vpcTunnel))
