@@ -319,6 +319,12 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			return ctrl.Result{}, err
 		}
 
+		err = r.Status().Update(ctx, vpcTunnel)
+		if err != nil {
+			log.Log.Error(err, "Error Update vpcTunnel status")
+			return ctrl.Result{}, err
+		}
+
 		// add label to find tunnel
 		labels := vpcTunnel.GetLabels()
 		if labels == nil {
@@ -348,6 +354,10 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 				log.Log.Error(err, "Error Update vpcTunnel")
 				return ctrl.Result{}, err
 			}
+			return ctrl.Result{}, nil
+		}
+
+		if vpcTunnel.Spec.LocalGw == "" {
 			return ctrl.Result{}, nil
 		}
 
@@ -393,22 +403,16 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			return ctrl.Result{}, err
 		}
 
-		err = r.Status().Update(ctx, vpcTunnel)
-		if err != nil {
-			log.Log.Error(err, "Error Update vpcTunnel")
-			return ctrl.Result{}, err
-		}
-
 		// if RemoteCluster, RemoteVpc or LocalVpc update, label need to update
 		if vpcTunnel.Labels["remoteCluster"] != vpcTunnel.Spec.RemoteCluster || vpcTunnel.Labels["remoteVpc"] != vpcTunnel.Spec.RemoteVpc || vpcTunnel.Labels["localVpc"] != vpcTunnel.Spec.LocalVpc {
 			vpcTunnel.Labels["remoteCluster"] = vpcTunnel.Spec.RemoteCluster
 			vpcTunnel.Labels["remoteVpc"] = vpcTunnel.Spec.RemoteVpc
 			vpcTunnel.Labels["localVpc"] = vpcTunnel.Spec.LocalVpc
-			err := r.Update(ctx, vpcTunnel)
-			if err != nil {
-				log.Log.Error(err, "Error Update vpcTunnel")
-				return ctrl.Result{}, err
-			}
+		}
+
+		if err = r.Update(ctx, vpcTunnel); err != nil {
+			log.Log.Error(err, "Error Update vpcTunnel")
+			return ctrl.Result{}, err
 		}
 	}
 	// 记录操作完成
