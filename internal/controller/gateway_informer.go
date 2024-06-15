@@ -3,15 +3,10 @@ package controller
 import (
 	"context"
 	"fmt"
-	kubeovnv1 "kubeovn-multivpc/api/v1"
-	"strings"
-
 	ovn "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
 	Submariner "github.com/submariner-io/submariner/pkg/apis/submariner.io/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/klog/v2"
-
 	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -19,22 +14,24 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/klog/v2"
+	kubeovnv1 "kubeovn-multivpc/api/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"strings"
 )
 
 type GatewayInformer struct {
 	ClusterId string
 	Client    client.Client
 	Config    *rest.Config
-	Tunnel    *VpcNatTunnelReconciler
 }
 
 //+kubebuilder:rbac:groups=kubeovn.io,resources=vpc-nat-gateways,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=kubeovn.io,resources=vpcs,verbs=get;list;watch;create;update;patch;delete
 
-func NewInformer(clusterId string, client client.Client, config *rest.Config, re *VpcNatTunnelReconciler) *GatewayInformer {
-	return &GatewayInformer{ClusterId: clusterId, Client: client, Config: config, Tunnel: re}
+func NewInformer(clusterId string, client client.Client, config *rest.Config) *GatewayInformer {
+	return &GatewayInformer{ClusterId: clusterId, Client: client, Config: config}
 }
 
 func (r *GatewayInformer) Start(ctx context.Context) error {
@@ -79,7 +76,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				}
 				// 创建 Vpc-Gateway 对应的 GatewayExIp
 				gatewayExIp := &kubeovnv1.GatewayExIp{}
-				pod, err := r.Tunnel.getNatGwPod(gatewayName)
+				pod, err := getNatGwPod(gatewayName, r.Client)
 				if err != nil {
 					log.Log.Error(err, "Error get gw pod")
 					return
@@ -118,7 +115,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 							return
 						}
 						// 找到此 gw 对应的 ExternIP
-						GwExternIP, err := r.Tunnel.getGwExternIP(pod)
+						GwExternIP, err := getGwExternIP(pod)
 						if err != nil {
 							log.Log.Error(err, "Error get GwExternIP")
 							return
@@ -204,12 +201,12 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				for _, route := range vpc.Spec.StaticRoutes {
 					route.NextHopIP = GwStatefulSet.Spec.Template.Annotations["ovn.kubernetes.io/ip_address"]
 				}
-				podNext, err := r.Tunnel.getNatGwPod(strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")) // find pod named Spec.NatGwDp
+				podNext, err := getNatGwPod(strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-"), r.Client)
 				if err != nil {
 					log.Log.Error(err, "Error get GwPod")
 					return
 				}
-				GwExternIP, err := r.Tunnel.getGwExternIP(podNext)
+				GwExternIP, err := getGwExternIP(podNext)
 				if err != nil {
 					log.Log.Error(err, "Error get GwExternIP")
 					return
@@ -243,12 +240,10 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				}
 				// 更新 相关的 VpcNatTunnel
 				for _, vpcTunnel := range vpcNatTunnelList.Items {
-					// vpcTunnel.Status.InternalIP = GwExternIP
-					// vpcTunnel.Status.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
 					vpcTunnel.Spec.InternalIP = GwExternIP
 					vpcTunnel.Spec.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
 
-					if err = r.Tunnel.Update(ctx, &vpcTunnel); err != nil {
+					if err = r.Client.Update(ctx, &vpcTunnel); err != nil {
 						log.Log.Error(err, "Error update vpcTunnel")
 						return
 					}
@@ -285,12 +280,12 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				}
 				// 若重启的网关是正在使用的，说明该 Vpc 是单网关
 				if natGw.Name == gatewayExIp.Labels["localGateway"] {
-					podNext, err := r.Tunnel.getNatGwPod(gatewayName)
+					podNext, err := getNatGwPod(gatewayName, r.Client)
 					if err != nil {
 						log.Log.Error(err, "Error get GwPod")
 						return
 					}
-					GwExternIP, err := r.Tunnel.getGwExternIP(podNext)
+					GwExternIP, err := getGwExternIP(podNext)
 					if err != nil {
 						log.Log.Error(err, "Error get GwExternIP")
 						return
@@ -316,9 +311,8 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 					}
 					// 更新 相关的 VpcNatTunnel
 					for _, vpcTunnel := range vpcNatTunnelList.Items {
-						// vpcTunnel.Status.InternalIP = GwExternIP
 						vpcTunnel.Spec.InternalIP = GwExternIP
-						if err = r.Tunnel.Update(ctx, &vpcTunnel); err != nil {
+						if err = r.Client.Update(ctx, &vpcTunnel); err != nil {
 							log.Log.Error(err, "Error update vpcTunnel")
 							return
 						}
@@ -389,12 +383,12 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				for _, route := range vpc.Spec.StaticRoutes {
 					route.NextHopIP = GwStatefulSet.Spec.Template.Annotations["ovn.kubernetes.io/ip_address"]
 				}
-				podNext, err := r.Tunnel.getNatGwPod(strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-"))
+				podNext, err := getNatGwPod(strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-"), r.Client)
 				if err != nil {
 					log.Log.Error(err, "Error get GwPod")
 					return
 				}
-				GwExternIP, err := r.Tunnel.getGwExternIP(podNext)
+				GwExternIP, err := getGwExternIP(podNext)
 				if err != nil {
 					log.Log.Error(err, "Error get GwExternIP")
 					return
@@ -436,12 +430,9 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				}
 				// 更新 相关的 VpcNatTunnel
 				for _, vpcTunnel := range vpcNatTunnelList.Items {
-					// vpcTunnel.Status.InternalIP = GwExternIP
-					// vpcTunnel.Status.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
 					vpcTunnel.Spec.InternalIP = GwExternIP
 					vpcTunnel.Spec.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
-
-					if err = r.Tunnel.Update(ctx, &vpcTunnel); err != nil {
+					if err = r.Client.Update(ctx, &vpcTunnel); err != nil {
 						log.Log.Error(err, "Error update vpcTunnel")
 						return
 					}

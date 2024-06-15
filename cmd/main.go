@@ -187,7 +187,7 @@ func main() {
 	}
 
 	// Gateway StatefulSet Informer
-	if err := mgr.Add(controller.NewInformer(agentSpec.ClusterID, mgr.GetClient(), mgr.GetConfig(), vpcNatTunnelReconciler)); err != nil {
+	if err := mgr.Add(controller.NewInformer(agentSpec.ClusterID, mgr.GetClient(), mgr.GetConfig())); err != nil {
 		setupLog.Error(err, "unable to set up gateway informer")
 		os.Exit(1)
 	}
