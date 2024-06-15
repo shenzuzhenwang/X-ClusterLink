@@ -243,26 +243,13 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				}
 				// 更新 相关的 VpcNatTunnel
 				for _, vpcTunnel := range vpcNatTunnelList.Items {
-					vpcTunnel.Status.InternalIP = GwExternIP
-					vpcTunnel.Status.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
+					// vpcTunnel.Status.InternalIP = GwExternIP
+					// vpcTunnel.Status.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
+					vpcTunnel.Spec.InternalIP = GwExternIP
 					vpcTunnel.Spec.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
 
-					err = r.Tunnel.execCommandInPod(podNext.Name, podNext.Namespace, "vpc-nat-gw", r.Tunnel.genCreateTunnelCmd(&vpcTunnel))
-					if err != nil {
-						log.Log.Error(err, "Error get exec CreateTunnelCmd")
-						return
-					}
-					err = r.Tunnel.execCommandInPod(podNext.Name, podNext.Namespace, "vpc-nat-gw", genGlobalnetRoute(&vpcTunnel))
-					if err != nil {
-						log.Log.Error(err, "Error get exec GlobalNetRoute")
-						return
-					}
 					if err = r.Tunnel.Update(ctx, &vpcTunnel); err != nil {
 						log.Log.Error(err, "Error update vpcTunnel")
-						return
-					}
-					if err = r.Tunnel.Status().Update(ctx, &vpcTunnel); err != nil {
-						log.Log.Error(err, "Error update vpcTunnel Status")
 						return
 					}
 				}
@@ -328,24 +315,10 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 					}
 					// 更新 相关的 VpcNatTunnel
 					for _, vpcTunnel := range vpcNatTunnelList.Items {
-						vpcTunnel.Status.InternalIP = GwExternIP
-
-						err = r.Tunnel.execCommandInPod(podNext.Name, podNext.Namespace, "vpc-nat-gw", r.Tunnel.genCreateTunnelCmd(&vpcTunnel))
-						if err != nil {
-							log.Log.Error(err, "Error get exec CreateTunnelCmd")
-							return
-						}
-						err = r.Tunnel.execCommandInPod(podNext.Name, podNext.Namespace, "vpc-nat-gw", genGlobalnetRoute(&vpcTunnel))
-						if err != nil {
-							log.Log.Error(err, "Error get exec GlobalNetRoute")
-							return
-						}
+						// vpcTunnel.Status.InternalIP = GwExternIP
+						vpcTunnel.Spec.InternalIP = GwExternIP
 						if err = r.Tunnel.Update(ctx, &vpcTunnel); err != nil {
 							log.Log.Error(err, "Error update vpcTunnel")
-							return
-						}
-						if err = r.Tunnel.Status().Update(ctx, &vpcTunnel); err != nil {
-							log.Log.Error(err, "Error update vpcTunnel Status")
 							return
 						}
 					}
@@ -450,26 +423,13 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				}
 				// 更新 相关的 VpcNatTunnel
 				for _, vpcTunnel := range vpcNatTunnelList.Items {
-					vpcTunnel.Status.InternalIP = GwExternIP
-					vpcTunnel.Status.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
+					// vpcTunnel.Status.InternalIP = GwExternIP
+					// vpcTunnel.Status.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
+					vpcTunnel.Spec.InternalIP = GwExternIP
 					vpcTunnel.Spec.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
 
-					err = r.Tunnel.execCommandInPod(podNext.Name, podNext.Namespace, "vpc-nat-gw", r.Tunnel.genCreateTunnelCmd(&vpcTunnel))
-					if err != nil {
-						log.Log.Error(err, "Error get exec CreateTunnelCmd")
-						return
-					}
-					err = r.Tunnel.execCommandInPod(podNext.Name, podNext.Namespace, "vpc-nat-gw", genGlobalnetRoute(&vpcTunnel))
-					if err != nil {
-						log.Log.Error(err, "Error get exec GlobalNetRoute")
-						return
-					}
 					if err = r.Tunnel.Update(ctx, &vpcTunnel); err != nil {
 						log.Log.Error(err, "Error update vpcTunnel")
-						return
-					}
-					if err = r.Tunnel.Status().Update(ctx, &vpcTunnel); err != nil {
-						log.Log.Error(err, "Error update vpcTunnel Status")
 						return
 					}
 				}

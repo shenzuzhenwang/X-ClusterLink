@@ -160,6 +160,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err = mgr.Add(controller.NewGwExIpSyner(&agentSpec, syncerConfig)); err != nil {
+		setupLog.Error(err, "unable to set up gatewayexip agent")
+		os.Exit(1)
+	}
+	/************/
+
 	// VpcNatTunnel Reconciler
 	vpcNatTunnelReconciler := &controller.VpcNatTunnelReconciler{
 		ClusterId: agentSpec.ClusterID,
@@ -170,12 +176,6 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "VpcNatTunnel")
 		os.Exit(1)
 	}
-
-	if err = mgr.Add(controller.NewGwExIpSyner(&agentSpec, syncerConfig, vpcNatTunnelReconciler)); err != nil {
-		setupLog.Error(err, "unable to set up gatewayexip agent")
-		os.Exit(1)
-	}
-	/************/
 
 	// VpcDnsForward Reconciler
 	if err = (&controller.VpcDnsForwardReconciler{

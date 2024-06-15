@@ -27,9 +27,10 @@ type VpcNatTunnelSpec struct {
 	InterfaceAddr string `json:"interfaceAddr"`
 	LocalVpc      string `json:"localVpc"`
 	// +kubebuilder:default="gre"
-	Type     string `json:"type,omitempty"`
-	RemoteIP string `json:"remoteIp,omitempty"`
-	LocalGw  string `json:"localGw,omitempty"`
+	Type       string `json:"type,omitempty"`
+	RemoteIP   string `json:"remoteIp,omitempty"`
+	InternalIP string `json:"internalIp,omitempty"`
+	LocalGw    string `json:"localGw,omitempty"`
 }
 
 // VpcNatTunnelStatus defines the observed state of VpcNatTunnel
