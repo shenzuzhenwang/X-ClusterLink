@@ -21,7 +21,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"k8s.io/klog/v2"
 	kubeovnv1 "kubeovn-multivpc/api/v1"
 	"kubeovn-multivpc/internal/tunnel/factory"
 	"strings"
@@ -303,8 +302,6 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			return ctrl.Result{}, err
 		}
 
-		klog.Info(GlobalEgressIP)
-
 		vpcTunnel.Status.GlobalnetCIDR = GlobalNetCIDR
 		vpcTunnel.Status.OvnGwIP = ovnGwIP
 		vpcTunnel.Status.GlobalEgressIP = GlobalEgressIP
@@ -322,6 +319,12 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			return ctrl.Result{}, err
 		}
 
+		err = r.Status().Update(ctx, vpcTunnel)
+		if err != nil {
+			log.Log.Error(err, "Error Update vpcTunnel Status")
+			return ctrl.Result{}, err
+		}
+
 		// add label to find tunnel
 		labels := vpcTunnel.GetLabels()
 		if labels == nil {
@@ -335,12 +338,6 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 		err = r.Update(ctx, vpcTunnel)
 		if err != nil {
 			log.Log.Error(err, "Error Update vpcTunnel")
-			return ctrl.Result{}, err
-		}
-
-		err = r.Status().Update(ctx, vpcTunnel)
-		if err != nil {
-			log.Log.Error(err, "Error Update vpcTunnel Status")
 			return ctrl.Result{}, err
 		}
 
@@ -402,6 +399,12 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			return ctrl.Result{}, err
 		}
 
+		err = r.Status().Update(ctx, vpcTunnel)
+		if err != nil {
+			log.Log.Error(err, "Error Update vpcTunnel")
+			return ctrl.Result{}, err
+		}
+
 		// if RemoteCluster, RemoteVpc or LocalVpc update, label need to update
 		if vpcTunnel.Labels["remoteCluster"] != vpcTunnel.Spec.RemoteCluster || vpcTunnel.Labels["remoteVpc"] != vpcTunnel.Spec.RemoteVpc || vpcTunnel.Labels["localVpc"] != vpcTunnel.Spec.LocalVpc {
 			vpcTunnel.Labels["remoteCluster"] = vpcTunnel.Spec.RemoteCluster
@@ -413,13 +416,6 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 				return ctrl.Result{}, err
 			}
 		}
-
-		err = r.Status().Update(ctx, vpcTunnel)
-		if err != nil {
-			log.Log.Error(err, "Error Update vpcTunnel")
-			return ctrl.Result{}, err
-		}
-
 	}
 	// 记录操作完成
 	log.Log.Info("创建/更新 VpcNatTunnel 成功: " + vpcTunnel.Name)
