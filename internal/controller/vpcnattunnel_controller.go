@@ -68,12 +68,8 @@ func (r *VpcNatTunnelReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if !vpcTunnel.ObjectMeta.DeletionTimestamp.IsZero() {
-		// 记录操作开始
-		log.Log.Info("删除 VpcNatTunnel: " + vpcTunnel.ObjectMeta.Name)
 		return r.handleDelete(ctx, vpcTunnel)
 	}
-	// 记录操作开始
-	log.Log.Info("创建/更新 VpcNatTunnel: " + vpcTunnel.ObjectMeta.Name)
 	return r.handleCreateOrUpdate(ctx, vpcTunnel)
 }
 
@@ -342,7 +338,7 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 		}
 
 		// if ClusterId or GatewayName update, then gatewayExIp.Spec.ExternalIP or gatewayExIp.Spec.GlobalNetCIDR will update too
-	} else if vpcTunnel.Status.Initialized && (vpcTunnel.Status.RemoteIP != remoteGatewayExIp.Spec.ExternalIP || vpcTunnel.Status.InternalIP != vpcTunnel.Status.InternalIP ||
+	} else if vpcTunnel.Status.Initialized && (vpcTunnel.Status.RemoteIP != vpcTunnel.Spec.RemoteIP || vpcTunnel.Status.InternalIP != vpcTunnel.Status.InternalIP ||
 		vpcTunnel.Status.InterfaceAddr != vpcTunnel.Spec.InterfaceAddr || vpcTunnel.Status.LocalGw != vpcTunnel.Spec.LocalGw ||
 		vpcTunnel.Status.RemoteGlobalnetCIDR != remoteGatewayExIp.Spec.GlobalNetCIDR || vpcTunnel.Status.Type != vpcTunnel.Spec.Type) {
 		// can't update type
@@ -389,7 +385,7 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			}
 		}
 
-		vpcTunnel.Status.RemoteIP = remoteGatewayExIp.Spec.ExternalIP
+		vpcTunnel.Status.RemoteIP = vpcTunnel.Spec.RemoteIP
 		vpcTunnel.Status.RemoteGlobalnetCIDR = remoteGatewayExIp.Spec.GlobalNetCIDR
 		vpcTunnel.Status.InternalIP = vpcTunnel.Spec.InternalIP
 		vpcTunnel.Status.InterfaceAddr = vpcTunnel.Spec.InterfaceAddr
