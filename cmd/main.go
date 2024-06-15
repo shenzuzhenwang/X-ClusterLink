@@ -154,15 +154,6 @@ func main() {
 	agentSpec := controller.AgentSpecification{
 		Verbosity: log.DEBUG,
 	}
-	if err := envconfig.Process("submariner", &agentSpec); err != nil {
-		setupLog.Error(err, "Error processing env config for agent spec")
-		os.Exit(1)
-	}
-	if err = mgr.Add(controller.NewGwExIpSyner(&agentSpec, syncerConfig)); err != nil {
-		setupLog.Error(err, "unable to set up gatewayexip agent")
-		os.Exit(1)
-	}
-	/************/
 
 	// VpcNatTunnel Reconciler
 	vpcNatTunnelReconciler := &controller.VpcNatTunnelReconciler{
@@ -174,6 +165,17 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "VpcNatTunnel")
 		os.Exit(1)
 	}
+
+	if err := envconfig.Process("submariner", &agentSpec); err != nil {
+		setupLog.Error(err, "Error processing env config for agent spec")
+		os.Exit(1)
+	}
+	if err = mgr.Add(controller.NewGwExIpSyner(&agentSpec, syncerConfig, vpcNatTunnelReconciler)); err != nil {
+		setupLog.Error(err, "unable to set up gatewayexip agent")
+		os.Exit(1)
+	}
+	/************/
+
 	// VpcDnsForward Reconciler
 	if err = (&controller.VpcDnsForwardReconciler{
 		Client: mgr.GetClient(),
@@ -183,7 +185,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Gateway statefuleset Informer
+	// Gateway StatefulSet Informer
 	if err := mgr.Add(controller.NewInformer(agentSpec.ClusterID, mgr.GetClient(), mgr.GetConfig(), vpcNatTunnelReconciler)); err != nil {
 		setupLog.Error(err, "unable to set up gateway informer")
 		os.Exit(1)

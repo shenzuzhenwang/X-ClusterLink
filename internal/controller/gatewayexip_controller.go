@@ -30,7 +30,6 @@ import (
 	"github.com/submariner-io/admiral/pkg/syncer/broker"
 	submarinerv1alpha1 "github.com/submariner-io/submariner-operator/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -59,6 +58,7 @@ type Controller struct {
 	clusterID string
 	syncer    *broker.Syncer
 	scheme    *runtime.Scheme
+	Tunnel    *VpcNatTunnelReconciler
 }
 
 // from ServiceDiscovery crd, set the environment vars
@@ -87,10 +87,11 @@ func InitEnvVars(syncerConf broker.SyncerConfig) error {
 	return nil
 }
 
-func NewGwExIpSyner(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller {
+func NewGwExIpSyner(spec *AgentSpecification, syncerConfig broker.SyncerConfig, re *VpcNatTunnelReconciler) *Controller {
 	c := &Controller{
 		clusterID: spec.ClusterID,
 		scheme:    syncerConfig.Scheme,
+		Tunnel:    re,
 	}
 	var err error
 	// set GatewayExIp crd syncer config
@@ -174,15 +175,28 @@ func (c *Controller) onRemoteGatewayExIpSynced(obj runtime.Object, op syncer.Ope
 	// update vpcNatTunnels, and maybe reconstruction tunnel
 	for _, vpcNatTunnel := range vpcNatTunnelList.Items {
 		vpcNatTunnel.Spec.RemoteIP = gatewayExIp.Spec.ExternalIP
-		data := &unstructured.Unstructured{}
-		utilruntime.Must(c.scheme.Convert(&vpcNatTunnel, data, nil))
-		_, err = c.syncer.GetLocalClient().Resource(schema.GroupVersionResource{
-			Group:    "kubeovn.ustc.io",
-			Version:  "v1",
-			Resource: "vpcnattunnels",
-		}).Namespace(vpcNatTunnel.Namespace).Update(context.Background(), data, metav1.UpdateOptions{})
+		vpcNatTunnel.Status.RemoteIP = gatewayExIp.Spec.ExternalIP
+		podNext, err := c.Tunnel.getNatGwPod(vpcNatTunnel.Status.LocalGw)
 		if err != nil {
-			log.Log.Error(err, "Error update vpctunnels")
+			log.Log.Error(err, "Error get GwPod")
+			return false
+		}
+		err = c.Tunnel.execCommandInPod(podNext.Name, podNext.Namespace, "vpc-nat-gw", c.Tunnel.genCreateTunnelCmd(&vpcNatTunnel))
+		if err != nil {
+			log.Log.Error(err, "Error get exec CreateTunnelCmd")
+			return false
+		}
+		err = c.Tunnel.execCommandInPod(podNext.Name, podNext.Namespace, "vpc-nat-gw", genGlobalnetRoute(&vpcNatTunnel))
+		if err != nil {
+			log.Log.Error(err, "Error get exec GlobalNetRoute")
+			return false
+		}
+		if err = c.Tunnel.Update(context.Background(), &vpcNatTunnel); err != nil {
+			log.Log.Error(err, "Error update vpcTunnel")
+			return false
+		}
+		if err = c.Tunnel.Status().Update(context.Background(), &vpcNatTunnel); err != nil {
+			log.Log.Error(err, "Error update vpcTunnel Status")
 			return false
 		}
 	}
