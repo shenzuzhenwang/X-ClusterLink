@@ -283,8 +283,9 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 					log.Log.Error(err, "Error get GatewayExIp")
 					return
 				}
+				// 若重启的网关是正在使用的，说明该 Vpc 是单网关
 				if natGw.Name == gatewayExIp.Labels["localGateway"] {
-					podNext, err := r.Tunnel.getNatGwPod(gatewayName) // find pod named Spec.NatGwDp
+					podNext, err := r.Tunnel.getNatGwPod(gatewayName)
 					if err != nil {
 						log.Log.Error(err, "Error get GwPod")
 						return
@@ -349,8 +350,8 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				log.Log.Error(err, "Error get gatewayExIp")
 				return
 			}
+			// 若删除的网关是正在使用的，则要切换网关
 			if natGw.Name == gatewayExIp.Labels["localGateway"] {
-				// 若删除的网关是正在使用的
 				vpcName := natGw.Spec.Vpc
 				vpc := &ovn.Vpc{}
 				err = r.Client.Get(ctx, client.ObjectKey{
@@ -378,7 +379,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 					}
 				}
 				if GwStatefulSet.Name == "" {
-					// 若没有可用的备用网关，直接删除gatewayExIp
+					// 若没有可用的备用网关，直接删除 gatewayExIp
 					err = r.Client.Delete(ctx, gatewayExIp)
 					if err != nil {
 						log.Log.Error(err, "Error delete gatewayExIp")
@@ -388,7 +389,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				for _, route := range vpc.Spec.StaticRoutes {
 					route.NextHopIP = GwStatefulSet.Spec.Template.Annotations["ovn.kubernetes.io/ip_address"]
 				}
-				podNext, err := r.Tunnel.getNatGwPod(strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")) // find pod named Spec.NatGwDp
+				podNext, err := r.Tunnel.getNatGwPod(strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-"))
 				if err != nil {
 					log.Log.Error(err, "Error get GwPod")
 					return
@@ -419,6 +420,18 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				err = r.Client.Update(ctx, gatewayExIp)
 				if err != nil {
 					log.Log.Error(err, "Error update gatewayExIp")
+					return
+				}
+				// 找到所有 localVpc 为 当前 Vpc 的 VpcTunnel
+				labelsSet := map[string]string{
+					"localVpc": vpcName,
+				}
+				option := client.ListOptions{
+					LabelSelector: labels.SelectorFromSet(labelsSet),
+				}
+				err = r.Client.List(ctx, &vpcNatTunnelList, &option)
+				if err != nil {
+					log.Log.Error(err, "Error get vpcNatTunnel list")
 					return
 				}
 				// 更新 相关的 VpcNatTunnel

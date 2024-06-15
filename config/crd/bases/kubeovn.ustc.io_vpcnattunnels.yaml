@@ -41,6 +41,8 @@ spec:
             properties:
               interfaceAddr:
                 type: string
+              internalIp:
+                type: string
               localGw:
                 type: string
               localVpc:

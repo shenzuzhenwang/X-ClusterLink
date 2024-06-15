@@ -391,7 +391,7 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 
 		if vpcTunnel.Status.LocalGw != vpcTunnel.Spec.LocalGw {
 			vpcTunnel.Status.LocalGw = vpcTunnel.Spec.LocalGw
-			gwPod, err = r.getNatGwPod(vpcTunnel.Status.LocalGw) // find pod named Status.NatGwDp
+			gwPod, err = r.getNatGwPod(vpcTunnel.Status.LocalGw)
 			if err != nil {
 				log.Log.Error(err, "Error get GwPod")
 				return ctrl.Result{}, err
