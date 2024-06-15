@@ -319,12 +319,6 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			return ctrl.Result{}, err
 		}
 
-		err = r.Status().Update(ctx, vpcTunnel)
-		if err != nil {
-			log.Log.Error(err, "Error Update vpcTunnel Status")
-			return ctrl.Result{}, err
-		}
-
 		// add label to find tunnel
 		labels := vpcTunnel.GetLabels()
 		if labels == nil {
