@@ -155,6 +155,11 @@ func main() {
 		Verbosity: log.DEBUG,
 	}
 
+	if err := envconfig.Process("submariner", &agentSpec); err != nil {
+		setupLog.Error(err, "Error processing env config for agent spec")
+		os.Exit(1)
+	}
+
 	// VpcNatTunnel Reconciler
 	vpcNatTunnelReconciler := &controller.VpcNatTunnelReconciler{
 		ClusterId: agentSpec.ClusterID,
@@ -166,10 +171,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := envconfig.Process("submariner", &agentSpec); err != nil {
-		setupLog.Error(err, "Error processing env config for agent spec")
-		os.Exit(1)
-	}
 	if err = mgr.Add(controller.NewGwExIpSyner(&agentSpec, syncerConfig, vpcNatTunnelReconciler)); err != nil {
 		setupLog.Error(err, "unable to set up gatewayexip agent")
 		os.Exit(1)
