@@ -244,7 +244,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				// 更新 相关的 VpcNatTunnel
 				for _, vpcTunnel := range vpcNatTunnelList.Items {
 					vpcTunnel.Status.InternalIP = GwExternIP
-					//vpcTunnel.Status.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
+					vpcTunnel.Status.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
 					vpcTunnel.Spec.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
 
 					//err = r.Tunnel.execCommandInPod(podNext.Name, podNext.Namespace, "vpc-nat-gw", r.Tunnel.genCreateTunnelCmd(&vpcTunnel))
@@ -451,7 +451,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				// 更新 相关的 VpcNatTunnel
 				for _, vpcTunnel := range vpcNatTunnelList.Items {
 					vpcTunnel.Status.InternalIP = GwExternIP
-					//vpcTunnel.Status.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
+					vpcTunnel.Status.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
 					vpcTunnel.Spec.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
 
 					//err = r.Tunnel.execCommandInPod(podNext.Name, podNext.Namespace, "vpc-nat-gw", r.Tunnel.genCreateTunnelCmd(&vpcTunnel))
