@@ -337,7 +337,7 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			}
 			return ctrl.Result{}, nil
 		}
-		if vpcTunnel.Spec.LocalGw == "" && vpcTunnel.Spec.InternalIP == "" && vpcTunnel.Spec.RemoteIP == "" {
+		if vpcTunnel.Spec.LocalGw == "" {
 			return ctrl.Result{}, nil
 		}
 		gwPod := &corev1.Pod{}

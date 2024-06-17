@@ -175,6 +175,18 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				if err = r.Client.Get(ctx, client.ObjectKey{Name: gatewayExIp.Labels["localVpc"]}, vpc); err != nil {
 					return
 				}
+				// 找到所有 localVpc 为 当前 Vpc 的 VpcTunnel
+				labelsSet := map[string]string{
+					"localVpc": vpc.Name,
+				}
+				option := client.ListOptions{
+					LabelSelector: labels.SelectorFromSet(labelsSet),
+				}
+				err = r.Client.List(ctx, &vpcNatTunnelList, &option)
+				if err != nil {
+					log.Log.Error(err, "Error get vpcNatTunnel list")
+					return
+				}
 				// 寻找可用的 Vpc-Gateway
 				GwList := &appsv1.StatefulSetList{}
 				err = r.Client.List(ctx, GwList, client.InNamespace("kube-system"), client.MatchingLabels{"ovn.kubernetes.io/vpc-nat-gw": "true"})
@@ -193,6 +205,19 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 					}
 				}
 				if GwStatefulSet.Name == "" {
+					// 说明是单网关，更新 相关的 VpcNatTunnel 的 LocalGw为空
+					for _, vpcTunnel := range vpcNatTunnelList.Items {
+						vpcTunnel.Spec.LocalGw = ""
+						if err = r.Client.Update(ctx, &vpcTunnel); err != nil {
+							log.Log.Error(err, "Error update vpcTunnel")
+							return
+						}
+						vpcTunnel.Status.LocalGw = ""
+						if err = r.Client.Status().Update(ctx, &vpcTunnel); err != nil {
+							log.Log.Error(err, "Error update vpcTunnel status")
+							return
+						}
+					}
 					return
 				}
 				for _, route := range vpc.Spec.StaticRoutes {
@@ -221,18 +246,6 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				err = r.Client.Update(ctx, gatewayExIp)
 				if err != nil {
 					log.Log.Error(err, "Error update gatewayExIp")
-					return
-				}
-				// 找到所有 localVpc 为 当前 Vpc 的 VpcTunnel
-				labelsSet := map[string]string{
-					"localVpc": vpc.Name,
-				}
-				option := client.ListOptions{
-					LabelSelector: labels.SelectorFromSet(labelsSet),
-				}
-				err = r.Client.List(ctx, &vpcNatTunnelList, &option)
-				if err != nil {
-					log.Log.Error(err, "Error get vpcNatTunnel list")
 					return
 				}
 				// 更新 相关的 VpcNatTunnel
@@ -303,8 +316,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				}
 				// 更新 相关的 VpcNatTunnel
 				for _, vpcTunnel := range vpcNatTunnelList.Items {
-					vpcTunnel.Spec.InternalIP = GwExternIP
-					vpcTunnel.Status.LocalGw = ""
+					vpcTunnel.Spec.LocalGw = gatewayName
 					if err = r.Client.Update(ctx, &vpcTunnel); err != nil {
 						log.Log.Error(err, "Error update vpcTunnel")
 						return
