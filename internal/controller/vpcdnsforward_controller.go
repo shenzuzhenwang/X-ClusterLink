@@ -18,12 +18,9 @@ package controller
 
 import (
 	"context"
-	"fmt"
-	"strings"
-	"time"
-
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"strings"
 
 	kubeovnv1 "kubeovn-multivpc/api/v1"
 
@@ -60,14 +57,8 @@ func (r *VpcDnsForwardReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if !vpcDns.ObjectMeta.DeletionTimestamp.IsZero() {
-		// 记录操作开始
-		now := time.Now()
-		fmt.Println(fmt.Sprintf("%d-%d-%d %d:%d:%d.%d   INFO   删除 VpcDnsForward:%s", now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second(), now.Nanosecond()/1e6, vpcDns.ObjectMeta.Name))
 		return r.handleDelete(ctx, vpcDns)
 	}
-	// 记录操作开始
-	now := time.Now()
-	fmt.Println(fmt.Sprintf("%d-%d-%d %d:%d:%d.%d   INFO   创建/更新 VpcDnsForward:%s", now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second(), now.Nanosecond()/1e6, vpcDns.ObjectMeta.Name))
 	return r.handleCreateOrUpdate(ctx, vpcDns)
 }
 
@@ -85,11 +76,7 @@ func (r *VpcDnsForwardReconciler) handleCreateOrUpdate(ctx context.Context, vpcD
 		log.Log.Error(err, "Error createDnsConnection to VpcDnsForward")
 		return ctrl.Result{}, err
 	}
-
-	// 记录操作完成
-	now := time.Now()
-	fmt.Println(fmt.Sprintf("%d-%d-%d %d:%d:%d.%d   INFO   创建/更新 VpcDnsForward 成功:%s", now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second(), now.Nanosecond()/1e6, vpcDns.ObjectMeta.Name))
-
+	log.Log.Info("创建 VpcDnsForward 成功: " + vpcDns.ObjectMeta.Name)
 	return ctrl.Result{}, nil
 }
 
@@ -106,9 +93,7 @@ func (r *VpcDnsForwardReconciler) handleDelete(ctx context.Context, vpcDns *kube
 			log.Log.Error(err, "Error Update VpcDnsForward")
 			return ctrl.Result{}, err
 		}
-		// 记录操作完成
-		now := time.Now()
-		fmt.Println(fmt.Sprintf("%d-%d-%d %d:%d:%d.%d 删除 VpcDnsForward:%s", now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second(), now.Nanosecond()/1e6, vpcDns.ObjectMeta.Name))
+		log.Log.Info("删除 VpcDnsForward 成功: " + vpcDns.ObjectMeta.Name)
 	}
 	return ctrl.Result{}, nil
 }

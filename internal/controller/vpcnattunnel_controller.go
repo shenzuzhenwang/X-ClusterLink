@@ -428,7 +428,6 @@ func (r *VpcNatTunnelReconciler) handleDelete(ctx context.Context, vpcTunnel *ku
 			log.Log.Error(err, "Error Update vpcTunnel")
 			return ctrl.Result{}, err
 		}
-		// 记录删除操作完成
 		log.Log.Info("删除 VpcNatTunnel 成功: " + vpcTunnel.Name)
 	}
 	return ctrl.Result{}, nil
