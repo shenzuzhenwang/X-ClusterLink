@@ -372,6 +372,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 					log.Log.Error(err, "Error delete gatewayExIp")
 					return
 				}
+				return
 			}
 			for _, route := range vpc.Spec.StaticRoutes {
 				route.NextHopIP = GwStatefulSet.Spec.Template.Annotations["ovn.kubernetes.io/ip_address"]

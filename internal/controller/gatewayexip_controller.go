@@ -19,7 +19,6 @@ package controller
 import (
 	"context"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/klog/v2"
 	kubeovnv1 "kubeovn-multivpc/api/v1"
 	"os"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -176,12 +175,14 @@ func (c *Controller) onRemoteGatewayExIpSynced(obj runtime.Object, op syncer.Ope
 	}
 	// update vpcNatTunnels
 	for _, vpcNatTunnel := range vpcNatTunnelList.Items {
+		if vpcNatTunnel.Spec.RemoteIP == gatewayExIp.Spec.ExternalIP {
+			continue
+		}
 		vpcNatTunnel.Spec.RemoteIP = gatewayExIp.Spec.ExternalIP
 		if err = c.Client.Update(context.Background(), &vpcNatTunnel); err != nil {
 			log.Log.Error(err, "Error update vpcTunnel")
 			return false
 		}
-		klog.Info("gatewayexip controller 更新 VpcNatTunnel")
 	}
 	return false
 }
