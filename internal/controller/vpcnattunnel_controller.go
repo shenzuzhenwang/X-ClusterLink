@@ -21,7 +21,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"k8s.io/klog/v2"
 	kubeovnv1 "kubeovn-multivpc/api/v1"
 	"kubeovn-multivpc/internal/tunnel/factory"
 	"strings"
@@ -324,7 +323,7 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 		}
 		log.Log.Info("创建 VpcNatTunnel 成功: " + vpcTunnel.Name)
 		// if ClusterId or GatewayName update, then gatewayExIp.Spec.ExternalIP or gatewayExIp.Spec.GlobalNetCIDR will update too
-	} else if vpcTunnel.Status.RemoteIP != vpcTunnel.Spec.RemoteIP || vpcTunnel.Status.InternalIP != vpcTunnel.Status.InternalIP ||
+	} else if vpcTunnel.Status.RemoteIP != vpcTunnel.Spec.RemoteIP || vpcTunnel.Status.InternalIP != vpcTunnel.Spec.InternalIP ||
 		vpcTunnel.Status.InterfaceAddr != vpcTunnel.Spec.InterfaceAddr || vpcTunnel.Status.LocalGw != vpcTunnel.Spec.LocalGw ||
 		vpcTunnel.Status.RemoteGlobalnetCIDR != remoteGatewayExIp.Spec.GlobalNetCIDR || vpcTunnel.Status.Type != vpcTunnel.Spec.Type {
 		// can't update type
@@ -366,10 +365,6 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 				log.Log.Error(err, "Error get GwPod")
 				return ctrl.Result{}, err
 			}
-		}
-
-		if vpcTunnel.Spec.InternalIP != vpcTunnel.Status.InternalIP {
-			klog.Info("internal ip 不一致")
 		}
 
 		vpcTunnel.Status.RemoteIP = vpcTunnel.Spec.RemoteIP

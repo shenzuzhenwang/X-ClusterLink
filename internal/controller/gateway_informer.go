@@ -301,7 +301,6 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 					log.Log.Error(err, "Error get vpcNatTunnel list")
 					return
 				}
-				klog.Info("test")
 				// 更新 相关的 VpcNatTunnel
 				for _, vpcTunnel := range vpcNatTunnelList.Items {
 					vpcTunnel.Spec.InternalIP = GwExternIP
