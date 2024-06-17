@@ -160,7 +160,8 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				if err = r.Client.List(ctx, gatewayExIpList, &options); err != nil {
 					return
 				}
-				for _, gatewayExIp = range gatewayExIpList.Items {
+				for _, ExIp := range gatewayExIpList.Items {
+					*gatewayExIp = ExIp
 					if gatewayExIp.Labels["localGateway"] == gatewayName {
 						break
 					}
@@ -260,7 +261,8 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				if err = r.Client.List(ctx, gatewayExIpList, &options); err != nil {
 					return
 				}
-				for _, gatewayExIp = range gatewayExIpList.Items {
+				for _, ExIp := range gatewayExIpList.Items {
+					*gatewayExIp = ExIp
 					if gatewayExIp.Labels["localGateway"] == gatewayName {
 						break
 					}
@@ -327,7 +329,8 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 			if err = r.Client.List(ctx, gatewayExIpList, &options); err != nil {
 				return
 			}
-			for _, gatewayExIp = range gatewayExIpList.Items {
+			for _, ExIp := range gatewayExIpList.Items {
+				*gatewayExIp = ExIp
 				if gatewayExIp.Labels["localGateway"] == gatewayName {
 					break
 				}
