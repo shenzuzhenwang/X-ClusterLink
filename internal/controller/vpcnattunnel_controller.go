@@ -247,9 +247,6 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 		log.Log.Error(err, "Error get GatewayExIp")
 		return ctrl.Result{}, err
 	}
-	if vpcTunnel.Status.RemoteIP != vpcTunnel.Spec.RemoteIP {
-		klog.Info("remote ip 不一致")
-	}
 
 	// first build tunnel
 	if !vpcTunnel.Status.Initialized {
@@ -347,6 +344,10 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 		vpcTunnel.Status.InterfaceAddr != vpcTunnel.Spec.InterfaceAddr || vpcTunnel.Status.LocalGw != vpcTunnel.Spec.LocalGw ||
 		vpcTunnel.Status.RemoteGlobalnetCIDR != remoteGatewayExIp.Spec.GlobalNetCIDR || vpcTunnel.Status.Type != vpcTunnel.Spec.Type {
 		// can't update type
+		if vpcTunnel.Status.RemoteIP != vpcTunnel.Spec.RemoteIP {
+			klog.Info("remote ip 不一致")
+		}
+
 		if vpcTunnel.Status.Type != vpcTunnel.Spec.Type {
 			log.Log.Error(errors.New("tunnel type should not change"), fmt.Sprintf("tunnel :%#v\n", vpcTunnel))
 			vpcTunnel.Spec.Type = vpcTunnel.Status.Type
@@ -358,7 +359,12 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			return ctrl.Result{}, nil
 		}
 
+		if vpcTunnel.Status.RemoteIP != vpcTunnel.Spec.RemoteIP {
+			klog.Info("remote ip 不一致")
+		}
+
 		if vpcTunnel.Spec.LocalGw == "" {
+			klog.Info("test")
 			return ctrl.Result{}, nil
 		}
 
@@ -366,6 +372,9 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 
 		// if gateway remain alive, we should delete route and tunnel, then create again
 		if vpcTunnel.Status.LocalGw == vpcTunnel.Spec.LocalGw {
+			if vpcTunnel.Status.RemoteIP != vpcTunnel.Spec.RemoteIP {
+				klog.Info("remote ip 不一致")
+			}
 			gwPod, err = getNatGwPod(vpcTunnel.Status.LocalGw, r.Client)
 			if err != nil {
 				log.Log.Error(err, "Error get GwPod")
