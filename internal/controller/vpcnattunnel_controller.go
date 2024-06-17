@@ -349,11 +349,7 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			}
 			return ctrl.Result{}, nil
 		}
-		if vpcTunnel.Status.RemoteIP != vpcTunnel.Spec.RemoteIP {
-			klog.Info("remote ip 不一致")
-		}
 		if vpcTunnel.Spec.LocalGw == "" && vpcTunnel.Spec.InternalIP == "" && vpcTunnel.Spec.RemoteIP == "" {
-			klog.Info("test")
 			return ctrl.Result{}, nil
 		}
 		var gwPod *corev1.Pod
