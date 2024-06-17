@@ -160,7 +160,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = mgr.Add(controller.NewGwExIpSyner(&agentSpec, syncerConfig)); err != nil {
+	if err = mgr.Add(controller.NewGwExIpSyner(mgr.GetClient(), &agentSpec, syncerConfig)); err != nil {
 		setupLog.Error(err, "unable to set up gatewayexip agent")
 		os.Exit(1)
 	}

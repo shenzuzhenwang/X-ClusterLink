@@ -18,10 +18,10 @@ package controller
 
 import (
 	"context"
-	"fmt"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	kubeovnv1 "kubeovn-multivpc/api/v1"
 	"os"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"strconv"
 	"strings"
 	"time"
@@ -57,6 +57,7 @@ var BrokerResyncPeriod = time.Minute * 2
 
 type Controller struct {
 	ClusterID string
+	Client    client.Client
 	Syncer    *broker.Syncer
 	Scheme    *runtime.Scheme
 }
@@ -90,10 +91,11 @@ func InitEnvVars(syncerConf broker.SyncerConfig) error {
 	return nil
 }
 
-func NewGwExIpSyner(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller {
+func NewGwExIpSyner(client client.Client, spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller {
 	c := &Controller{
 		ClusterID: spec.ClusterID,
 		Scheme:    syncerConfig.Scheme,
+		Client:    client,
 	}
 	var err error
 	// set GatewayExIp crd syncer config
@@ -159,33 +161,23 @@ func (c *Controller) onRemoteGatewayExIpSynced(obj runtime.Object, op syncer.Ope
 	remoteVpc := splitStrings[0]
 	remoteCluster := splitStrings[1]
 
-	options := metav1.ListOptions{
-		LabelSelector: fmt.Sprintf("remoteCluster=%s,remoteVpc=%s", remoteCluster, remoteVpc),
+	labelsSet := map[string]string{
+		"remoteCluster": remoteCluster,
+		"remoteVpc":     remoteVpc,
+	}
+	option := client.ListOptions{
+		LabelSelector: labels.SelectorFromSet(labelsSet),
 	}
 	vpcNatTunnelList := &kubeovnv1.VpcNatTunnelList{}
-	objList, err := c.Syncer.GetLocalClient().Resource(schema.GroupVersionResource{
-		Group:    "kubeovn.ustc.io",
-		Version:  "v1",
-		Resource: "vpcnattunnels",
-	}).List(context.Background(), options)
+	err := c.Client.List(context.Background(), vpcNatTunnelList, &option)
 	if err != nil {
-		log.Log.Error(err, "Error get vpctunnels")
 		return false
 	}
-	utilruntime.Must(c.Scheme.Convert(objList, vpcNatTunnelList, nil))
-
-	// update vpcNatTunnels, and maybe reconstruction tunnel
+	// update vpcNatTunnels
 	for _, vpcNatTunnel := range vpcNatTunnelList.Items {
 		vpcNatTunnel.Spec.RemoteIP = gatewayExIp.Spec.ExternalIP
-		data := &unstructured.Unstructured{}
-		utilruntime.Must(c.Scheme.Convert(&vpcNatTunnel, data, nil))
-		_, err = c.Syncer.GetLocalClient().Resource(schema.GroupVersionResource{
-			Group:    "kubeovn.ustc.io",
-			Version:  "v1",
-			Resource: "vpcnattunnels",
-		}).Namespace(vpcNatTunnel.Namespace).Update(context.Background(), data, metav1.UpdateOptions{})
-		if err != nil {
-			log.Log.Error(err, "Error update vpctunnels")
+		if err = c.Client.Update(context.Background(), &vpcNatTunnel); err != nil {
+			log.Log.Error(err, "Error update vpcTunnel")
 			return false
 		}
 	}
