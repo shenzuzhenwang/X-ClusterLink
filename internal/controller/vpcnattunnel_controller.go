@@ -235,6 +235,7 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			return ctrl.Result{}, err
 		}
 	}
+	klog.Info("处理 创建/更新")
 
 	// 获取 VpcNatTunnel 对应的对端 GatewayExIp
 	remoteGatewayExIp := &kubeovnv1.GatewayExIp{}
@@ -245,6 +246,9 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 	if err != nil {
 		log.Log.Error(err, "Error get GatewayExIp")
 		return ctrl.Result{}, err
+	}
+	if vpcTunnel.Status.RemoteIP != vpcTunnel.Spec.RemoteIP {
+		klog.Info("remote ip 不一致")
 	}
 
 	// first build tunnel
@@ -362,7 +366,7 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 
 		// if gateway remain alive, we should delete route and tunnel, then create again
 		if vpcTunnel.Status.LocalGw == vpcTunnel.Spec.LocalGw {
-			gwPod, err = getNatGwPod(vpcTunnel.Status.LocalGw, r.Client) // find pod named Status.NatGwDp
+			gwPod, err = getNatGwPod(vpcTunnel.Status.LocalGw, r.Client)
 			if err != nil {
 				log.Log.Error(err, "Error get GwPod")
 				return ctrl.Result{}, err

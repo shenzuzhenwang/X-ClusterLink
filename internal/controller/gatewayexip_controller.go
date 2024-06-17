@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/klog/v2"
 	kubeovnv1 "kubeovn-multivpc/api/v1"
 	"os"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -180,6 +181,7 @@ func (c *Controller) onRemoteGatewayExIpSynced(obj runtime.Object, op syncer.Ope
 			log.Log.Error(err, "Error update vpcTunnel")
 			return false
 		}
+		klog.Info("gatewayexip controller 更新 VpcNatTunnel")
 	}
 	return false
 }
