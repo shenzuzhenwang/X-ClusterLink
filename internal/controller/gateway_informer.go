@@ -304,6 +304,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				// 更新 相关的 VpcNatTunnel
 				for _, vpcTunnel := range vpcNatTunnelList.Items {
 					vpcTunnel.Spec.InternalIP = GwExternIP
+					vpcTunnel.Status.LocalGw = ""
 					if err = r.Client.Update(ctx, &vpcTunnel); err != nil {
 						log.Log.Error(err, "Error update vpcTunnel")
 						return
