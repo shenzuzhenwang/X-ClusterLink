@@ -205,19 +205,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 					}
 				}
 				if GwStatefulSet.Name == "" {
-					// 说明是单网关，更新 相关的 VpcNatTunnel 的 LocalGw为空
-					for _, vpcTunnel := range vpcNatTunnelList.Items {
-						vpcTunnel.Spec.LocalGw = ""
-						if err = r.Client.Update(ctx, &vpcTunnel); err != nil {
-							log.Log.Error(err, "Error update vpcTunnel")
-							return
-						}
-						vpcTunnel.Status.LocalGw = ""
-						if err = r.Client.Status().Update(ctx, &vpcTunnel); err != nil {
-							log.Log.Error(err, "Error update vpcTunnel status")
-							return
-						}
-					}
+					// 说明是单网关，不处理
 					return
 				}
 				for _, route := range vpc.Spec.StaticRoutes {
@@ -316,7 +304,6 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				}
 				// 更新 相关的 VpcNatTunnel
 				for _, vpcTunnel := range vpcNatTunnelList.Items {
-					vpcTunnel.Spec.LocalGw = gatewayName
 					vpcTunnel.Spec.InternalIP = GwExternIP
 					if err = r.Client.Update(ctx, &vpcTunnel); err != nil {
 						log.Log.Error(err, "Error update vpcTunnel")

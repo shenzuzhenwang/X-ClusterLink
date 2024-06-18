@@ -62,7 +62,7 @@ type Controller struct {
 	Scheme    *runtime.Scheme
 }
 
-// from ServiceDiscovery crd, set the environment vars
+// InitEnvVars from ServiceDiscovery crd, set the environment vars
 func InitEnvVars(syncerConf broker.SyncerConfig) error {
 	cr := &submarinerv1alpha1.ServiceDiscovery{}
 	obj, err := syncerConf.LocalClient.Resource(schema.GroupVersionResource{
@@ -122,7 +122,7 @@ func NewGwExIpSyner(client client.Client, spec *AgentSpecification, syncerConfig
 	return c
 }
 
-// start syncer to sync
+// Start syncer to sync
 func (c *Controller) Start(ctx context.Context) error {
 	stopCh := ctx.Done()
 	if err := c.Syncer.Start(stopCh); err != nil {
