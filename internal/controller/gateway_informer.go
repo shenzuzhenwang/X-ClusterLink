@@ -127,6 +127,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 						label := make(map[string]string)
 						label["localVpc"] = natGw.Spec.Vpc
 						label["localGateway"] = natGw.Name
+						label["localCluster"] = r.ClusterId
 						gatewayExIp.Labels = label
 						err = r.Client.Create(ctx, gatewayExIp)
 						if err != nil {
@@ -151,8 +152,10 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				// 通过 Vpc-Gateway name 寻找对应的 GatewayExIp
 				labelSet := map[string]string{
 					"localGateway": gatewayName,
+					"localCluster": r.ClusterId,
 				}
 				options := client.ListOptions{
+					Namespace:     "kube-system",
 					LabelSelector: labels.SelectorFromSet(labelSet),
 				}
 				gatewayExIpList := &kubeovnv1.GatewayExIpList{}
@@ -253,8 +256,10 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				// 通过 Vpc-Gateway name 寻找对应的 GatewayExIp
 				labelSet := map[string]string{
 					"localGateway": gatewayName,
+					"localCluster": r.ClusterId,
 				}
 				options := client.ListOptions{
+					Namespace:     "kube-system",
 					LabelSelector: labels.SelectorFromSet(labelSet),
 				}
 				gatewayExIpList := &kubeovnv1.GatewayExIpList{}
@@ -321,8 +326,10 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 			// 通过 Vpc-Gateway name 寻找对应的 GatewayExIp
 			labelSet := map[string]string{
 				"localGateway": gatewayName,
+				"localCluster": r.ClusterId,
 			}
 			options := client.ListOptions{
+				Namespace:     "kube-system",
 				LabelSelector: labels.SelectorFromSet(labelSet),
 			}
 			gatewayExIpList := &kubeovnv1.GatewayExIpList{}

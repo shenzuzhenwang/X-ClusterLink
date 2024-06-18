@@ -366,13 +366,13 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			}
 		}
 
+		log.Log.Info("VpcNatTunnel Spec: " + vpcTunnel.Spec.LocalGw + "," + vpcTunnel.Spec.InternalIP + "," + vpcTunnel.Spec.RemoteIP)
+		log.Log.Info("VpcNatTunnel Status: " + vpcTunnel.Status.LocalGw + "," + vpcTunnel.Status.InternalIP + "," + vpcTunnel.Status.RemoteIP)
+
 		vpcTunnel.Status.RemoteIP = vpcTunnel.Spec.RemoteIP
 		vpcTunnel.Status.RemoteGlobalnetCIDR = remoteGatewayExIp.Spec.GlobalNetCIDR
 		vpcTunnel.Status.InternalIP = vpcTunnel.Spec.InternalIP
 		vpcTunnel.Status.InterfaceAddr = vpcTunnel.Spec.InterfaceAddr
-
-		log.Log.Info("VpcNatTunnel Spec: " + vpcTunnel.Spec.LocalGw + "," + vpcTunnel.Spec.InternalIP + "," + vpcTunnel.Spec.RemoteIP)
-		log.Log.Info("VpcNatTunnel Status: " + vpcTunnel.Status.LocalGw + "," + vpcTunnel.Status.InternalIP + "," + vpcTunnel.Status.RemoteIP)
 
 		err = r.execCommandInPod(gwPod.Name, gwPod.Namespace, "vpc-nat-gw", genCreateTunnelCmd(r.tunnelOpFact, vpcTunnel))
 		if err != nil {
