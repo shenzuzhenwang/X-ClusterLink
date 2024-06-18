@@ -14,7 +14,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/klog/v2"
 	kubeovnv1 "kubeovn-multivpc/api/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -134,6 +133,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 							log.Log.Error(err, "Error create gatewayExIp")
 							return
 						}
+						log.Log.Info("GatewayExIp create success: " + gatewayExIp.Name)
 					}
 				} else {
 					// 若 gatewayExIp 存在，说明已经有网关在Vpc中运行，则新加的网关当作备用网关，不做处理
@@ -161,7 +161,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 					return
 				}
 				for _, ExIp := range gatewayExIpList.Items {
-					*gatewayExIp = ExIp
+					gatewayExIp = &ExIp
 					if gatewayExIp.Labels["localGateway"] == gatewayName {
 						break
 					}
@@ -198,7 +198,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				// find Vpc-Gateway which status is Active
 				for _, statefulSet := range GwList.Items {
 					// gateway 可用 pod 为 1 且 gateway 对应的 vpc 要与之前的一致
-					if statefulSet.Status.AvailableReplicas == 1 &&
+					if statefulSet.Status.AvailableReplicas == 1 && statefulSet.Name != newStatefulSet.Name &&
 						statefulSet.Spec.Template.Annotations["ovn.kubernetes.io/logical_router"] == newStatefulSet.Spec.Template.Annotations["ovn.kubernetes.io/logical_router"] {
 						GwStatefulSet = &statefulSet
 						break
@@ -227,20 +227,20 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 					log.Log.Error(err, "Error update Vpc")
 					return
 				}
+				log.Log.Info("vpc route updated: " + vpc.Name)
 				// 更新 GatewayExIp
 				gatewayExIp.Spec.ExternalIP = GwExternIP
 				gatewayExIp.Labels["localGateway"] = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
-
 				err = r.Client.Update(ctx, gatewayExIp)
 				if err != nil {
 					log.Log.Error(err, "Error update gatewayExIp")
 					return
 				}
+				log.Log.Info("GatewayExIp updated: " + gatewayExIp.Name)
 				// 更新 相关的 VpcNatTunnel
 				for _, vpcTunnel := range vpcNatTunnelList.Items {
 					vpcTunnel.Spec.InternalIP = GwExternIP
 					vpcTunnel.Spec.LocalGw = strings.TrimPrefix(GwStatefulSet.Name, "vpc-nat-gw-")
-
 					if err = r.Client.Update(ctx, &vpcTunnel); err != nil {
 						log.Log.Error(err, "Error update vpcTunnel")
 						return
@@ -263,7 +263,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 					return
 				}
 				for _, ExIp := range gatewayExIpList.Items {
-					*gatewayExIp = ExIp
+					gatewayExIp = &ExIp
 					if gatewayExIp.Labels["localGateway"] == gatewayName {
 						break
 					}
@@ -290,6 +290,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 					log.Log.Error(err, "Error update gatewayExIp")
 					return
 				}
+				log.Log.Info("GatewayExIp updated: " + gatewayExIp.Name)
 				// 找到所有 localVpc 为 当前 Vpc 的 VpcTunnel
 				labelsSet := map[string]string{
 					"localVpc": gatewayExIp.Labels["localVpc"],
@@ -330,7 +331,7 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 				return
 			}
 			for _, ExIp := range gatewayExIpList.Items {
-				*gatewayExIp = ExIp
+				gatewayExIp = &ExIp
 				if gatewayExIp.Labels["localGateway"] == gatewayName {
 					break
 				}
@@ -434,7 +435,6 @@ func (r *GatewayInformer) Start(ctx context.Context) error {
 	}
 	select {
 	case <-stopCh:
-		klog.Info("received termination signal, exiting")
 		log.Log.Info("received termination signal, exiting")
 	}
 	return nil

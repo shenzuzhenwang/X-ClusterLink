@@ -63,7 +63,6 @@ func (r *VpcNatTunnelReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	vpcTunnel := &kubeovnv1.VpcNatTunnel{}
 	err := r.Get(ctx, req.NamespacedName, vpcTunnel)
 	if err != nil {
-		log.Log.Error(err, "unable to fetch vpcNatTunnel")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if !vpcTunnel.ObjectMeta.DeletionTimestamp.IsZero() {
@@ -371,6 +370,9 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 		vpcTunnel.Status.RemoteGlobalnetCIDR = remoteGatewayExIp.Spec.GlobalNetCIDR
 		vpcTunnel.Status.InternalIP = vpcTunnel.Spec.InternalIP
 		vpcTunnel.Status.InterfaceAddr = vpcTunnel.Spec.InterfaceAddr
+
+		log.Log.Info("VpcNatTunnel Spec: " + vpcTunnel.Spec.LocalGw + "," + vpcTunnel.Spec.InternalIP + "," + vpcTunnel.Spec.RemoteIP)
+		log.Log.Info("VpcNatTunnel Status: " + vpcTunnel.Status.LocalGw + "," + vpcTunnel.Status.InternalIP + "," + vpcTunnel.Status.RemoteIP)
 
 		err = r.execCommandInPod(gwPod.Name, gwPod.Namespace, "vpc-nat-gw", genCreateTunnelCmd(r.tunnelOpFact, vpcTunnel))
 		if err != nil {
