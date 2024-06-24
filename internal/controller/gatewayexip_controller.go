@@ -18,19 +18,20 @@ package controller
 
 import (
 	"context"
-	"fmt"
 	kubeovnv1 "kubeovn-multivpc/api/v1"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"k8s.io/apimachinery/pkg/labels"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	pkgError "github.com/pkg/errors"
 	"github.com/submariner-io/admiral/pkg/syncer"
 	"github.com/submariner-io/admiral/pkg/syncer/broker"
 	submarinerv1alpha1 "github.com/submariner-io/submariner-operator/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -56,12 +57,13 @@ type AgentSpecification struct {
 var BrokerResyncPeriod = time.Minute * 2
 
 type Controller struct {
-	clusterID string
-	syncer    *broker.Syncer
-	scheme    *runtime.Scheme
+	ClusterID string
+	Client    client.Client
+	Syncer    *broker.Syncer
+	Scheme    *runtime.Scheme
 }
 
-// from ServiceDiscovery crd, set the environment vars
+// InitEnvVars from ServiceDiscovery crd, set the environment vars
 func InitEnvVars(syncerConf broker.SyncerConfig) error {
 	cr := &submarinerv1alpha1.ServiceDiscovery{}
 	obj, err := syncerConf.LocalClient.Resource(schema.GroupVersionResource{
@@ -73,24 +75,28 @@ func InitEnvVars(syncerConf broker.SyncerConfig) error {
 		return err
 	}
 	utilruntime.Must(syncerConf.Scheme.Convert(obj, cr, nil))
-	os.Setenv("SUBMARINER_NAMESPACE", cr.Spec.Namespace)
-	os.Setenv("SUBMARINER_CLUSTERID", cr.Spec.ClusterID)
-	os.Setenv("SUBMARINER_DEBUG", strconv.FormatBool(cr.Spec.Debug))
-	os.Setenv("SUBMARINER_GLOBALNET_ENABLED", strconv.FormatBool(cr.Spec.GlobalnetEnabled))
-	os.Setenv("SUBMARINER_HALT_ON_CERT_ERROR", strconv.FormatBool(cr.Spec.HaltOnCertificateError))
-	os.Setenv(broker.EnvironmentVariable("ApiServer"), cr.Spec.BrokerK8sApiServer)
-	os.Setenv(broker.EnvironmentVariable("ApiServerToken"), cr.Spec.BrokerK8sApiServerToken)
-	os.Setenv(broker.EnvironmentVariable("RemoteNamespace"), cr.Spec.BrokerK8sRemoteNamespace)
-	os.Setenv(broker.EnvironmentVariable("CA"), cr.Spec.BrokerK8sCA)
-	os.Setenv(broker.EnvironmentVariable("Insecure"), strconv.FormatBool(cr.Spec.BrokerK8sInsecure))
-	os.Setenv(broker.EnvironmentVariable("Secret"), cr.Spec.BrokerK8sSecret)
+	err = os.Setenv("SUBMARINER_NAMESPACE", cr.Spec.Namespace)
+	err = os.Setenv("SUBMARINER_CLUSTERID", cr.Spec.ClusterID)
+	err = os.Setenv("SUBMARINER_DEBUG", strconv.FormatBool(cr.Spec.Debug))
+	err = os.Setenv("SUBMARINER_GLOBALNET_ENABLED", strconv.FormatBool(cr.Spec.GlobalnetEnabled))
+	err = os.Setenv("SUBMARINER_HALT_ON_CERT_ERROR", strconv.FormatBool(cr.Spec.HaltOnCertificateError))
+	err = os.Setenv(broker.EnvironmentVariable("ApiServer"), cr.Spec.BrokerK8sApiServer)
+	err = os.Setenv(broker.EnvironmentVariable("ApiServerToken"), cr.Spec.BrokerK8sApiServerToken)
+	err = os.Setenv(broker.EnvironmentVariable("RemoteNamespace"), cr.Spec.BrokerK8sRemoteNamespace)
+	err = os.Setenv(broker.EnvironmentVariable("CA"), cr.Spec.BrokerK8sCA)
+	err = os.Setenv(broker.EnvironmentVariable("Insecure"), strconv.FormatBool(cr.Spec.BrokerK8sInsecure))
+	err = os.Setenv(broker.EnvironmentVariable("Secret"), cr.Spec.BrokerK8sSecret)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
-func NewGwExIpSyner(spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller {
+func NewGwExIpSyner(client client.Client, spec *AgentSpecification, syncerConfig broker.SyncerConfig) *Controller {
 	c := &Controller{
-		clusterID: spec.ClusterID,
-		scheme:    syncerConfig.Scheme,
+		ClusterID: spec.ClusterID,
+		Scheme:    syncerConfig.Scheme,
+		Client:    client,
 	}
 	var err error
 	// set GatewayExIp crd syncer config
@@ -109,7 +115,7 @@ func NewGwExIpSyner(spec *AgentSpecification, syncerConfig broker.SyncerConfig) 
 		},
 	}
 	// create broker Syncer, set Two-way sync for ResourceConfig
-	c.syncer, err = broker.NewSyncer(syncerConfig)
+	c.Syncer, err = broker.NewSyncer(syncerConfig)
 	if err != nil {
 		log.Log.Error(err, "error creating GatewayExIp syncer")
 		return nil
@@ -117,10 +123,10 @@ func NewGwExIpSyner(spec *AgentSpecification, syncerConfig broker.SyncerConfig) 
 	return c
 }
 
-// start syncer to sync
+// Start syncer to sync
 func (c *Controller) Start(ctx context.Context) error {
 	stopCh := ctx.Done()
-	if err := c.syncer.Start(stopCh); err != nil {
+	if err := c.Syncer.Start(stopCh); err != nil {
 		return pkgError.Wrap(err, "error starting syncer")
 	}
 	log.Log.Info("Agent controller started")
@@ -153,36 +159,29 @@ func (c *Controller) onRemoteGatewayExIpSynced(obj runtime.Object, op syncer.Ope
 	// find vpcNatTunnels which use this GatewayExIp
 	gatewayExIp := obj.(*kubeovnv1.GatewayExIp)
 	splitStrings := strings.SplitN(gatewayExIp.Name, ".", 2)
-	gatewayName := splitStrings[0]
-	clusterId := splitStrings[1]
+	remoteVpc := splitStrings[0]
+	remoteCluster := splitStrings[1]
 
-	options := metav1.ListOptions{
-		LabelSelector: fmt.Sprintf("remoteCluster=%s,remoteGateway=%s", clusterId, gatewayName),
+	labelsSet := map[string]string{
+		"remoteCluster": remoteCluster,
+		"remoteVpc":     remoteVpc,
+	}
+	option := client.ListOptions{
+		LabelSelector: labels.SelectorFromSet(labelsSet),
 	}
 	vpcNatTunnelList := &kubeovnv1.VpcNatTunnelList{}
-	objList, err := c.syncer.GetLocalClient().Resource(schema.GroupVersionResource{
-		Group:    "kubeovn.ustc.io",
-		Version:  "v1",
-		Resource: "vpcnattunnels",
-	}).List(context.Background(), options)
+	err := c.Client.List(context.Background(), vpcNatTunnelList, &option)
 	if err != nil {
-		log.Log.Error(err, "Error get vpctunnels")
 		return false
 	}
-	utilruntime.Must(c.scheme.Convert(objList, vpcNatTunnelList, nil))
-
-	// update vpcNatTunnels, and maybe reconstruction tunnel
+	// update vpcNatTunnels
 	for _, vpcNatTunnel := range vpcNatTunnelList.Items {
-		vpcNatTunnel.Spec.RemoteIP = gatewayExIp.Spec.ExternalIP // 感觉只是触发了handleCreateOrUpdate而已 TODO：更改
-		data := &unstructured.Unstructured{}
-		utilruntime.Must(c.scheme.Convert(&vpcNatTunnel, data, nil))
-		_, err = c.syncer.GetLocalClient().Resource(schema.GroupVersionResource{
-			Group:    "kubeovn.ustc.io",
-			Version:  "v1",
-			Resource: "vpcnattunnels",
-		}).Namespace(vpcNatTunnel.Namespace).Update(context.Background(), data, metav1.UpdateOptions{})
-		if err != nil {
-			log.Log.Error(err, "Error update vpctunnels")
+		if vpcNatTunnel.Spec.RemoteIP == gatewayExIp.Spec.ExternalIP {
+			continue
+		}
+		vpcNatTunnel.Spec.RemoteIP = gatewayExIp.Spec.ExternalIP
+		if err = c.Client.Update(context.Background(), &vpcNatTunnel); err != nil {
+			log.Log.Error(err, "Error update vpcTunnel")
 			return false
 		}
 	}

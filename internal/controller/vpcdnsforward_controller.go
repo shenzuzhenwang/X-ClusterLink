@@ -77,6 +77,7 @@ func (r *VpcDnsForwardReconciler) handleCreateOrUpdate(ctx context.Context, vpcD
 		log.Log.Error(err, "Error createDnsConnection to VpcDnsForward")
 		return ctrl.Result{}, err
 	}
+	log.Log.Info("创建 VpcDnsForward 成功: " + vpcDns.ObjectMeta.Name)
 	return ctrl.Result{}, nil
 }
 
@@ -93,6 +94,7 @@ func (r *VpcDnsForwardReconciler) handleDelete(ctx context.Context, vpcDns *kube
 			log.Log.Error(err, "Error Update VpcDnsForward")
 			return ctrl.Result{}, err
 		}
+		log.Log.Info("删除 VpcDnsForward 成功: " + vpcDns.ObjectMeta.Name)
 	}
 	return ctrl.Result{}, nil
 }
@@ -147,12 +149,6 @@ func (r *VpcDnsForwardReconciler) updateDnsCorefile(ctx context.Context) error {
 		log.Log.Error(err, "Error Update ConfigMap vpc-dns-corefile")
 		return err
 	}
-
-	// var vpcDnsList ovn.VpcDnsList
-	// err = r.Client.List(ctx, &vpcDnsList, &client.ListOptions{})
-	// if err != nil {
-	// 	return err
-	// }
 	return nil
 }
 
@@ -246,16 +242,6 @@ func (r *VpcDnsForwardReconciler) createDnsConnection(ctx context.Context, vpcDn
 			}
 		}
 	}
-	// for i := 0; i < len(initContainers); i++ {
-	// 	for j := 0; j < len(initContainers[i].Command); j++ {
-	// 		if strings.Contains(initContainers[i].Command[j], "ip -4 route add") {
-	// 			if !strings.Contains(initContainers[i].Command[j], route) {
-	// 				initContainers[i].Command[j] = initContainers[i].Command[j] + route
-	// 			}
-	// 		}
-	// 	}
-	// }
-
 	err = r.Client.Update(ctx, vpcDnsDeployment)
 	if err != nil {
 		log.Log.Error(err, "Error Update vpcDnsDeployment")
@@ -280,11 +266,6 @@ func (r *VpcDnsForwardReconciler) deleteDnsConnection(ctx context.Context, vpcDn
 	for j := 0; j < len(initContainers.Command); j++ {
 		initContainers.Command[j] = strings.Replace(initContainers.Command[j], route, "", -1)
 	}
-	// for i := 0; i < len(initContainers); i++ {
-	// 	for j := 0; j < len(initContainers[i].Command); j++ {
-	// 		initContainers[i].Command[j] = strings.Replace(initContainers[i].Command[j], route, "", -1)
-	// 	}
-	// }
 	err = r.Client.Update(ctx, vpcDnsDeployment)
 	if err != nil {
 		log.Log.Error(err, "Error Update vpcDnsDeployment")

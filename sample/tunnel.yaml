@@ -1,10 +1,10 @@
 apiVersion: "kubeovn.ustc.io/v1"
 kind: VpcNatTunnel
 metadata:
-  name: ovn-gre0
-  namespace: ns1
+  name: gre1
+  namespace: ns2
 spec:
-  clusterId: "cluster1" #对端集群名字
-  gatewayName: "gw1" #对端 vpc 网关名字
+  remoteCluster: "cluster2"      #对端集群
+  remoteVpc: "test-vpc-2"        #对端集群 vpc
   interfaceAddr: "10.100.0.1/24" #隧道地址
-  natGwDp: "gw1" #本集群 vpc 网关名字
+  localVpc: "test-vpc-2"         #本集群 vpc

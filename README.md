@@ -42,6 +42,91 @@ sdn@server02:~$ kubectl get pod -A
 multi-vpc-system      multi-vpc-controller-manager-7cf6c6b9d6-q4sq5    2/2     Running            0               73s
 ```
 
+### 更改broker的RBAC
+
+在部署broker的集群上更改RBAC（目的是通过broker同步gatewayexips）
+
+```YAML
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: submariner-k8s-broker-cluster
+  namespace: submariner-k8s-broker
+rules:
+  - apiGroups:
+      - submariner.io
+    resources:
+      - clusters
+      - endpoints
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - patch
+      - update
+      - delete
+  - apiGroups:
+      - submariner.io
+    resources:
+      - brokers
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - multicluster.x-k8s.io
+    resources:
+      - '*'
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - patch
+      - update
+      - delete
+  - apiGroups:
+      - discovery.k8s.io
+    resources:
+      - endpointslices
+      - endpointslices/restricted
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - patch
+      - update
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - kubeovn.ustc.io
+    resources:
+      - gatewayexips
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - patch
+      - update
+      - delete
+```
+
 ### 使用 DNS 转发
 
 新建 dns.yaml
@@ -112,15 +197,16 @@ Pod Template:
 apiVersion: "kubeovn.ustc.io/v1"
 kind: VpcNatTunnel
 metadata:
-  name: ovn-gre0
-  namespace: ns1
+  name: gre1
+  namespace: ns2
 spec:
-  clusterId: "cluster2" #互联的对端集群ID
-  gatewayName: "gw1"    # 互联的对端集群 vpc-gw 名字
+  remoteCluster: "cluster2"      #对端集群
+  remoteVpc: "test-vpc-2"        #对端集群 vpc
   interfaceAddr: "10.100.0.1/24" #隧道地址
-  natGwDp: "gw1" #本集群 vpc-gw 名字
+  localVpc: "test-vpc-2"         #本集群 vpc
+  type: "vxlan" #隧道类型，或"gre"，默认为"gre"
 ```
-
+其中，`interfaceAddr`代表本端隧道的IP地址；`localVpc`需要指定隧道本端的vpc的名称；`type`可以使用VXLAN和GRE两种；`remoteCluster`指的是隧道对端集群的Submariner cluster id；`remoteVpc`指的是隧道对端的 vpc名称，可以与本端的一样；其中，本端的GlobalnetCIDR和vpc-gateway的物理网络IP(GatewayExIp CRD)都可以自动获取，而对端的则可以从broker上同步过来。
 ```sh
 kubectl apply -f tunnel.yaml
 ```
@@ -164,14 +250,14 @@ kubectl delete -f tunnel.yaml
 apiVersion: "kubeovn.ustc.io/v1"
 kind: GatewayExIp
 metadata:
-  name: gw1-cluster1    # 本端隧道的vpc-gw name + 本端集群的submariner cluster id
-  namespace: kube-system
+  name: test-vpc-2.cluster1
+  namespace: ns2
 spec:
-  externalip: 172.50.16.99    # 本端隧道的vpc-gw的物理网络IP
+  externalip: 172.50.16.99
   globalnetcidr: 242.1.0.0/16    # 本端集群的submariner GlobalnetCIDR
 ```
 
-其中，`externalip`代表本端隧道的vpc-gw的物理网络IP（net1网卡IP）；`globalnetcidr`代表本端集群的submariner GlobalnetCIDR；`name`生成时，会使用`vpc-gw name` - `cluster id`，以防多集群同步出现碰撞。
+其中，`externalip`代表本端隧道的vpc-gw的物理网络IP（net1网卡IP）；`globalnetcidr`代表本端集群的submariner GlobalnetCIDR；`name`生成时，会使用`vpc name` - `cluster id`，以防多集群同步出现碰撞。
 
 这个GatewayExIp crd会同步至broker，然后同步到各集群上，其他集群建立VpcNatTunnel 时，就可以通过指定`gatewayName`和`clusterId`来寻找对应的GatewayExIp，从而得到对端隧道的`externalip`和`globalnetcidr`，最后成功建立隧道。隧道的具体创建方式与前文一样。
 

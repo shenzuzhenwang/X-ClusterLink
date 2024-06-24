@@ -126,24 +126,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// VpcNatTunnel Reconciler
-	vpcNatTunnelReconciler := &controller.VpcNatTunnelReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}
-	if err = (vpcNatTunnelReconciler).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "VpcNatTunnel")
-		os.Exit(1)
-	}
-	// VpcDnsForward Reconciler
-	if err = (&controller.VpcDnsForwardReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "VpcDnsForward")
-		os.Exit(1)
-	}
-
 	// ************* submariner broker syner gwexip crd
 	cfg := mgr.GetConfig()
 
@@ -172,18 +154,40 @@ func main() {
 	agentSpec := controller.AgentSpecification{
 		Verbosity: log.DEBUG,
 	}
+
 	if err := envconfig.Process("submariner", &agentSpec); err != nil {
 		setupLog.Error(err, "Error processing env config for agent spec")
 		os.Exit(1)
 	}
-	if err = mgr.Add(controller.NewGwExIpSyner(&agentSpec, syncerConfig)); err != nil {
+
+	if err = mgr.Add(controller.NewGwExIpSyner(mgr.GetClient(), &agentSpec, syncerConfig)); err != nil {
 		setupLog.Error(err, "unable to set up gatewayexip agent")
 		os.Exit(1)
 	}
 	/************/
 
-	// Gateway statefuleset Informer
-	if err := mgr.Add(controller.NewInformer(agentSpec.ClusterID, mgr.GetClient(), mgr.GetConfig(), vpcNatTunnelReconciler)); err != nil {
+	// VpcNatTunnel Reconciler
+	vpcNatTunnelReconciler := &controller.VpcNatTunnelReconciler{
+		ClusterId: agentSpec.ClusterID,
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+	}
+	if err = (vpcNatTunnelReconciler).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "VpcNatTunnel")
+		os.Exit(1)
+	}
+
+	// VpcDnsForward Reconciler
+	if err = (&controller.VpcDnsForwardReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "VpcDnsForward")
+		os.Exit(1)
+	}
+
+	// Gateway StatefulSet Informer
+	if err := mgr.Add(controller.NewInformer(agentSpec.ClusterID, mgr.GetClient(), mgr.GetConfig())); err != nil {
 		setupLog.Error(err, "unable to set up gateway informer")
 		os.Exit(1)
 	}

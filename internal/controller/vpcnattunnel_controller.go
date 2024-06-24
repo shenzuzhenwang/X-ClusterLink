@@ -43,9 +43,9 @@ import (
 // VpcNatTunnelReconciler reconciles a VpcNatTunnel object
 type VpcNatTunnelReconciler struct {
 	client.Client
+	ClusterId    string
 	Scheme       *runtime.Scheme
 	Config       *rest.Config
-	KubeClient   kubernetes.Interface
 	tunnelOpFact *factory.TunnelOperationFactory
 }
 
@@ -63,7 +63,6 @@ func (r *VpcNatTunnelReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	vpcTunnel := &kubeovnv1.VpcNatTunnel{}
 	err := r.Get(ctx, req.NamespacedName, vpcTunnel)
 	if err != nil {
-		log.Log.Error(err, "unable to fetch vpcNatTunnel")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if !vpcTunnel.ObjectMeta.DeletionTimestamp.IsZero() {
@@ -73,7 +72,7 @@ func (r *VpcNatTunnelReconciler) Reconcile(ctx context.Context, req ctrl.Request
 }
 
 func (r *VpcNatTunnelReconciler) execCommandInPod(podName, namespace, containerName, command string) error {
-	clientset, err := kubernetes.NewForConfig(r.Config)
+	clientSet, err := kubernetes.NewForConfig(r.Config)
 	if err != nil {
 		log.Log.Error(err, "Error NewForConfig in execCommandInPod")
 		return err
@@ -84,7 +83,7 @@ func (r *VpcNatTunnelReconciler) execCommandInPod(podName, namespace, containerN
 		command,
 	}
 	const tty = false
-	req := clientset.CoreV1().RESTClient().Post().
+	req := clientSet.CoreV1().RESTClient().Post().
 		Resource("pods").
 		Name(podName).
 		Namespace(namespace).SubResource("exec").Param("container", containerName)
@@ -133,14 +132,14 @@ func GenNatGwStsName(name string) string {
 	return fmt.Sprintf("vpc-nat-gw-%s", name)
 }
 
-func (r *VpcNatTunnelReconciler) getNatGwPod(name string) (*corev1.Pod, error) {
+func getNatGwPod(name string, c client.Client) (*corev1.Pod, error) {
 	podList := &corev1.PodList{}
 	matchLabels := map[string]string{"app": GenNatGwStsName(name), "ovn.kubernetes.io/vpc-nat-gw": "true"}
 	listOpts := []client.ListOption{
 		client.InNamespace("kube-system"),
 		client.MatchingLabels(matchLabels),
 	}
-	err := r.List(context.TODO(), podList, listOpts...)
+	err := c.List(context.TODO(), podList, listOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -160,19 +159,17 @@ func (r *VpcNatTunnelReconciler) getNatGwPod(name string) (*corev1.Pod, error) {
 }
 
 func (r *VpcNatTunnelReconciler) getGlobalnetCIDR() (string, error) {
-	submGwlist := &Submariner.GatewayList{}
-	err := r.List(context.TODO(), submGwlist, client.InNamespace("submariner-operator"))
+	// 找到本集群的GlobalNetCIDR
+	submarinerCluster := &Submariner.Cluster{}
+	err := r.Client.Get(context.Background(), client.ObjectKey{
+		Namespace: "submariner-operator",
+		Name:      r.ClusterId,
+	}, submarinerCluster)
 	if err != nil {
+		log.Log.Error(err, "Error get submarinerCluster")
 		return "", err
 	}
-
-	submGws := submGwlist.Items
-	switch {
-	case len(submGws) == 0:
-		return "", fmt.Errorf("no Submariner.Gateway")
-	default:
-		return submGws[0].Status.LocalEndpoint.Subnets[0], nil
-	}
+	return submarinerCluster.Spec.GlobalCIDR[0], nil
 }
 
 func (r *VpcNatTunnelReconciler) getGlobalEgressIP() ([]string, error) {
@@ -184,7 +181,7 @@ func (r *VpcNatTunnelReconciler) getGlobalEgressIP() ([]string, error) {
 	return submGlobalEgressIP.Status.AllocatedIPs, nil
 }
 
-func (r *VpcNatTunnelReconciler) getGwExternIP(pod *corev1.Pod) (string, error) {
+func getGwExternIP(pod *corev1.Pod) (string, error) {
 	if ExternIP, ok := pod.Annotations["ovn-vpc-external-network.kube-system.kubernetes.io/ip_address"]; ok {
 		return ExternIP, nil
 	} else {
@@ -200,8 +197,8 @@ func (r *VpcNatTunnelReconciler) getOvnGwIP(pod *corev1.Pod) (string, error) {
 	}
 }
 
-func (r *VpcNatTunnelReconciler) genCreateTunnelCmd(tunnel *kubeovnv1.VpcNatTunnel) string {
-	return r.tunnelOpFact.CreateTunnelOperation(tunnel).CreateCmd()
+func genCreateTunnelCmd(tunnelOpFact *factory.TunnelOperationFactory, tunnel *kubeovnv1.VpcNatTunnel) string {
+	return tunnelOpFact.CreateTunnelOperation(tunnel).CreateCmd()
 }
 
 func genGlobalnetRoute(vpcTunnel *kubeovnv1.VpcNatTunnel) string {
@@ -223,37 +220,8 @@ func genDelGlobalnetRoute(vpcTunnel *kubeovnv1.VpcNatTunnel) string {
 	return InFlowRoute + ";" + OutFlowRoute + ";" + SNAT
 }
 
-func (r *VpcNatTunnelReconciler) genDeleteTunnelCmd(tunnel *kubeovnv1.VpcNatTunnel) string {
-	return r.tunnelOpFact.CreateTunnelOperation(tunnel).DeleteCmd()
-}
-
-// update PodGwIP GlobalEgressIP GlobalnetCIDR GwExternIP
-func (r *VpcNatTunnelReconciler) updateTunnelStatus(vpcTunnel *kubeovnv1.VpcNatTunnel, pod *corev1.Pod) error {
-	GlobalnetCIDR, err := r.getGlobalnetCIDR()
-	if err != nil {
-		log.Log.Error(err, "Error get local GlobalnetCIDR")
-		return err
-	}
-	vpcTunnel.Status.GlobalnetCIDR = GlobalnetCIDR
-	ovnGwIP, err := r.getOvnGwIP(pod)
-	if err != nil {
-		log.Log.Error(err, "Error get local PodGwIP")
-		return err
-	}
-	vpcTunnel.Status.OvnGwIP = ovnGwIP
-	GlobalEgressIP, err := r.getGlobalEgressIP()
-	if err != nil {
-		log.Log.Error(err, "Error get local GlobalEgressIP")
-		return err
-	}
-	vpcTunnel.Status.GlobalEgressIP = GlobalEgressIP
-	GwExternIP, err := r.getGwExternIP(pod)
-	if err != nil {
-		log.Log.Error(err, "Error get local GwExternIP")
-		return err
-	}
-	vpcTunnel.Status.InternalIP = GwExternIP
-	return nil
+func genDeleteTunnelCmd(tunnelOpFact *factory.TunnelOperationFactory, tunnel *kubeovnv1.VpcNatTunnel) string {
+	return tunnelOpFact.CreateTunnelOperation(tunnel).DeleteCmd()
 }
 
 func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTunnel *kubeovnv1.VpcNatTunnel) (ctrl.Result, error) {
@@ -264,79 +232,99 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			return ctrl.Result{}, err
 		}
 	}
-
-	// 获取 VpcNatTunnel 对应的对端 GatewayExIp crd
-	gatewayExIp := &kubeovnv1.GatewayExIp{}
+	// 获取 VpcNatTunnel 对应的对端 GatewayExIp
+	remoteGatewayExIp := &kubeovnv1.GatewayExIp{}
 	err := r.Client.Get(ctx, client.ObjectKey{
-		Name:      vpcTunnel.Spec.GatewayName + "." + vpcTunnel.Spec.ClusterId,
+		Name:      vpcTunnel.Spec.RemoteVpc + "." + vpcTunnel.Spec.RemoteCluster,
 		Namespace: "kube-system",
-	}, gatewayExIp)
+	}, remoteGatewayExIp)
 	if err != nil {
 		log.Log.Error(err, "Error get GatewayExIp")
 		return ctrl.Result{}, err
 	}
+	// first build tunnel
+	if !vpcTunnel.Status.Initialized {
+		// 通过 localVpc 找到对应的 gatewayExIp, 从而找到当前正在使用的 Gateway
+		localGatewayExIp := &kubeovnv1.GatewayExIp{}
+		err := r.Client.Get(ctx, client.ObjectKey{
+			Name:      vpcTunnel.Spec.LocalVpc + "." + r.ClusterId,
+			Namespace: "kube-system",
+		}, localGatewayExIp)
+		if err != nil {
+			log.Log.Error(err, "Error get local GatewayExIp")
+			return ctrl.Result{}, err
+		}
 
-	if !vpcTunnel.Status.Initialized { // first build tunnel
-		// init remoteIp
-		vpcTunnel.Status.RemoteIP = gatewayExIp.Spec.ExternalIP
-		vpcTunnel.Spec.RemoteIP = gatewayExIp.Spec.ExternalIP
-		// init GlobalNetCIDR
-		vpcTunnel.Status.RemoteGlobalnetCIDR = gatewayExIp.Spec.GlobalNetCIDR
-
+		vpcTunnel.Status.LocalGw = localGatewayExIp.GetObjectMeta().GetLabels()["localGateway"]
+		vpcTunnel.Status.RemoteIP = remoteGatewayExIp.Spec.ExternalIP
+		vpcTunnel.Status.RemoteGlobalnetCIDR = remoteGatewayExIp.Spec.GlobalNetCIDR
 		vpcTunnel.Status.Initialized = true
 		vpcTunnel.Status.InterfaceAddr = vpcTunnel.Spec.InterfaceAddr
-		vpcTunnel.Status.NatGwDp = vpcTunnel.Spec.NatGwDp
 		vpcTunnel.Status.Type = vpcTunnel.Spec.Type
 
-		// add tunnel
-		gwpod, err := r.getNatGwPod(vpcTunnel.Status.NatGwDp) // find pod named Spec.NatGwDp
+		gwPod, err := getNatGwPod(vpcTunnel.Status.LocalGw, r.Client)
 		if err != nil {
 			log.Log.Error(err, "Error get GwPod")
 			return ctrl.Result{}, err
 		}
-
-		err = r.updateTunnelStatus(vpcTunnel, gwpod)
+		vpcTunnel.Status.GlobalnetCIDR, err = r.getGlobalnetCIDR()
 		if err != nil {
+			log.Log.Error(err, "Error get local GlobalNetCIDR")
+			return ctrl.Result{}, err
+		}
+		vpcTunnel.Status.OvnGwIP, err = r.getOvnGwIP(gwPod)
+		if err != nil {
+			log.Log.Error(err, "Error get local PodGwIP")
+			return ctrl.Result{}, err
+		}
+		vpcTunnel.Status.GlobalEgressIP, err = r.getGlobalEgressIP()
+		if err != nil {
+			log.Log.Error(err, "Error get local GlobalEgressIP")
+			return ctrl.Result{}, err
+		}
+		vpcTunnel.Status.InternalIP, err = getGwExternIP(gwPod)
+		if err != nil {
+			log.Log.Error(err, "Error get local GwExternIP")
 			return ctrl.Result{}, err
 		}
 
-		err = r.execCommandInPod(gwpod.Name, gwpod.Namespace, "vpc-nat-gw", r.genCreateTunnelCmd(vpcTunnel))
+		err = r.execCommandInPod(gwPod.Name, gwPod.Namespace, "vpc-nat-gw", genCreateTunnelCmd(r.tunnelOpFact, vpcTunnel))
 		if err != nil {
 			log.Log.Error(err, "Error exec genCreateTunnelCmd in Initialized")
 			return ctrl.Result{}, err
 		}
-		err = r.execCommandInPod(gwpod.Name, gwpod.Namespace, "vpc-nat-gw", genGlobalnetRoute(vpcTunnel))
+		err = r.execCommandInPod(gwPod.Name, gwPod.Namespace, "vpc-nat-gw", genGlobalnetRoute(vpcTunnel))
 		if err != nil {
-			log.Log.Error(err, "Error exec genGlobalnetRoute in Initialized")
+			log.Log.Error(err, "Error exec genGlobalNetRoute in Initialized")
 			return ctrl.Result{}, err
 		}
-
 		err = r.Status().Update(ctx, vpcTunnel)
 		if err != nil {
-			log.Log.Error(err, "Error Update vpcTunnel Status")
+			log.Log.Error(err, "Error Update vpcTunnel status")
 			return ctrl.Result{}, err
 		}
-
-		// add label, to find tunnel
+		// add label to find tunnel
 		labels := vpcTunnel.GetLabels()
 		if labels == nil {
 			labels = make(map[string]string)
 		}
-		labels["localGateway"] = vpcTunnel.Spec.NatGwDp
-		labels["remoteCluster"] = vpcTunnel.Spec.ClusterId
-		labels["remoteGateway"] = vpcTunnel.Spec.GatewayName
+		vpcTunnel.Spec.InternalIP = vpcTunnel.Status.InternalIP
+		vpcTunnel.Spec.LocalGw = localGatewayExIp.GetObjectMeta().GetLabels()["localGateway"]
+		vpcTunnel.Spec.RemoteIP = remoteGatewayExIp.Spec.ExternalIP
+		labels["localVpc"] = vpcTunnel.Spec.LocalVpc
+		labels["remoteCluster"] = vpcTunnel.Spec.RemoteCluster
+		labels["remoteVpc"] = vpcTunnel.Spec.RemoteVpc
 		vpcTunnel.Labels = labels
-
 		err = r.Update(ctx, vpcTunnel)
 		if err != nil {
 			log.Log.Error(err, "Error Update vpcTunnel")
 			return ctrl.Result{}, err
 		}
-
+		log.Log.Info("创建 VpcNatTunnel 成功: " + vpcTunnel.Name)
 		// if ClusterId or GatewayName update, then gatewayExIp.Spec.ExternalIP or gatewayExIp.Spec.GlobalNetCIDR will update too
-	} else if vpcTunnel.Status.Initialized && (vpcTunnel.Status.RemoteIP != gatewayExIp.Spec.ExternalIP ||
-		vpcTunnel.Status.InterfaceAddr != vpcTunnel.Spec.InterfaceAddr || vpcTunnel.Status.NatGwDp != vpcTunnel.Spec.NatGwDp ||
-		vpcTunnel.Status.RemoteGlobalnetCIDR != gatewayExIp.Spec.GlobalNetCIDR || vpcTunnel.Status.Type != vpcTunnel.Spec.Type) {
+	} else if vpcTunnel.Status.RemoteIP != vpcTunnel.Spec.RemoteIP || vpcTunnel.Status.InternalIP != vpcTunnel.Spec.InternalIP ||
+		vpcTunnel.Status.InterfaceAddr != vpcTunnel.Spec.InterfaceAddr || vpcTunnel.Status.LocalGw != vpcTunnel.Spec.LocalGw ||
+		vpcTunnel.Status.RemoteGlobalnetCIDR != remoteGatewayExIp.Spec.GlobalNetCIDR || vpcTunnel.Status.Type != vpcTunnel.Spec.Type {
 		// can't update type
 		if vpcTunnel.Status.Type != vpcTunnel.Spec.Type {
 			log.Log.Error(errors.New("tunnel type should not change"), fmt.Sprintf("tunnel :%#v\n", vpcTunnel))
@@ -348,69 +336,71 @@ func (r *VpcNatTunnelReconciler) handleCreateOrUpdate(ctx context.Context, vpcTu
 			}
 			return ctrl.Result{}, nil
 		}
-		// can't update NatGwDp
-		if vpcTunnel.Status.NatGwDp != vpcTunnel.Spec.NatGwDp {
-			log.Log.Error(errors.New("tunnel Gateway pod should not change"), fmt.Sprintf("tunnel :%#v\n", vpcTunnel))
-			vpcTunnel.Spec.NatGwDp = vpcTunnel.Status.NatGwDp
-			err := r.Update(ctx, vpcTunnel)
-			if err != nil {
-				log.Log.Error(err, "Error Update vpcTunnel")
-				return ctrl.Result{}, err
-			}
+		if vpcTunnel.Spec.LocalGw == "" && vpcTunnel.Spec.RemoteIP == "" && vpcTunnel.Spec.InternalIP == "" {
 			return ctrl.Result{}, nil
 		}
+		gwPod := &corev1.Pod{}
+		// if gateway remain alive, we should delete route and tunnel, then create again
+		if vpcTunnel.Status.LocalGw == vpcTunnel.Spec.LocalGw && vpcTunnel.Spec.InternalIP == vpcTunnel.Status.InternalIP {
+			gwPod, err = getNatGwPod(vpcTunnel.Status.LocalGw, r.Client)
+			if err != nil {
+				log.Log.Error(err, "Error get GwPod")
+				return ctrl.Result{}, err
+			}
+			err = r.execCommandInPod(gwPod.Name, gwPod.Namespace, "vpc-nat-gw", genDelGlobalnetRoute(vpcTunnel))
+			if err != nil {
+				log.Log.Error(err, "Error exec genDelGlobalnetRoute in update")
+				return ctrl.Result{}, err
+			}
+			err = r.execCommandInPod(gwPod.Name, gwPod.Namespace, "vpc-nat-gw", genDeleteTunnelCmd(r.tunnelOpFact, vpcTunnel))
+			if err != nil {
+				log.Log.Error(err, "Error exec genDeleteTunnelCmd in update")
+				return ctrl.Result{}, err
+			}
+		} else {
+			vpcTunnel.Status.LocalGw = vpcTunnel.Spec.LocalGw
+			gwPod, err = getNatGwPod(vpcTunnel.Status.LocalGw, r.Client)
+			if err != nil {
+				log.Log.Error(err, "Error get GwPod")
+				return ctrl.Result{}, err
+			}
+		}
 
-		// if spec update, we should delete route and tunnel, then create again
-		gwpod, err := r.getNatGwPod(vpcTunnel.Status.NatGwDp) // find pod named Status.NatGwDp
-		if err != nil {
-			log.Log.Error(err, "Error get GwPod")
-			return ctrl.Result{}, err
-		}
-		err = r.execCommandInPod(gwpod.Name, gwpod.Namespace, "vpc-nat-gw", genDelGlobalnetRoute(vpcTunnel))
-		if err != nil {
-			log.Log.Error(err, "Error exec genDelGlobalnetRoute in update")
-			return ctrl.Result{}, err
-		}
-		err = r.execCommandInPod(gwpod.Name, gwpod.Namespace, "vpc-nat-gw", r.genDeleteTunnelCmd(vpcTunnel))
-		if err != nil {
-			log.Log.Error(err, "Error exec genDeleteTunnelCmd in update")
-			return ctrl.Result{}, err
-		}
+		log.Log.Info("VpcNatTunnel Spec: " + vpcTunnel.Spec.LocalGw + "," + vpcTunnel.Spec.InternalIP + "," + vpcTunnel.Spec.RemoteIP)
+		log.Log.Info("VpcNatTunnel Status: " + vpcTunnel.Status.LocalGw + "," + vpcTunnel.Status.InternalIP + "," + vpcTunnel.Status.RemoteIP)
 
-		vpcTunnel.Status.RemoteIP = gatewayExIp.Spec.ExternalIP
-		vpcTunnel.Status.RemoteGlobalnetCIDR = gatewayExIp.Spec.GlobalNetCIDR
+		vpcTunnel.Status.RemoteIP = vpcTunnel.Spec.RemoteIP
+		vpcTunnel.Status.RemoteGlobalnetCIDR = remoteGatewayExIp.Spec.GlobalNetCIDR
+		vpcTunnel.Status.InternalIP = vpcTunnel.Spec.InternalIP
 		vpcTunnel.Status.InterfaceAddr = vpcTunnel.Spec.InterfaceAddr
 
-		err = r.execCommandInPod(gwpod.Name, gwpod.Namespace, "vpc-nat-gw", r.genCreateTunnelCmd(vpcTunnel))
+		err = r.execCommandInPod(gwPod.Name, gwPod.Namespace, "vpc-nat-gw", genCreateTunnelCmd(r.tunnelOpFact, vpcTunnel))
 		if err != nil {
 			log.Log.Error(err, "Error exec genCreateTunnelCmd in update")
 			return ctrl.Result{}, err
 		}
-		err = r.execCommandInPod(gwpod.Name, gwpod.Namespace, "vpc-nat-gw", genGlobalnetRoute(vpcTunnel))
+		err = r.execCommandInPod(gwPod.Name, gwPod.Namespace, "vpc-nat-gw", genGlobalnetRoute(vpcTunnel))
 		if err != nil {
-			log.Log.Error(err, "Error exec genGlobalnetRoute in update")
+			log.Log.Error(err, "Error exec genGlobalNetRoute in update")
 			return ctrl.Result{}, err
 		}
-
 		err = r.Status().Update(ctx, vpcTunnel)
 		if err != nil {
 			log.Log.Error(err, "Error Update vpcTunnel")
 			return ctrl.Result{}, err
 		}
-
-		// if ClusterId or GatewayName update, label need to update
-		if vpcTunnel.Labels["remoteCluster"] != vpcTunnel.Spec.ClusterId || vpcTunnel.Labels["remoteGateway"] != vpcTunnel.Spec.GatewayName || vpcTunnel.Labels["localGateway"] != vpcTunnel.Spec.NatGwDp {
-			vpcTunnel.Labels["remoteCluster"] = vpcTunnel.Spec.ClusterId
-			vpcTunnel.Labels["remoteGateway"] = vpcTunnel.Spec.GatewayName
-			vpcTunnel.Labels["localGateway"] = vpcTunnel.Spec.NatGwDp
-			err := r.Update(ctx, vpcTunnel)
-			if err != nil {
+		// if RemoteCluster, RemoteVpc or LocalVpc update, label need to update
+		if vpcTunnel.Labels["remoteCluster"] != vpcTunnel.Spec.RemoteCluster || vpcTunnel.Labels["remoteVpc"] != vpcTunnel.Spec.RemoteVpc || vpcTunnel.Labels["localVpc"] != vpcTunnel.Spec.LocalVpc {
+			vpcTunnel.Labels["remoteCluster"] = vpcTunnel.Spec.RemoteCluster
+			vpcTunnel.Labels["remoteVpc"] = vpcTunnel.Spec.RemoteVpc
+			vpcTunnel.Labels["localVpc"] = vpcTunnel.Spec.LocalVpc
+			if err = r.Update(ctx, vpcTunnel); err != nil {
 				log.Log.Error(err, "Error Update vpcTunnel")
 				return ctrl.Result{}, err
 			}
 		}
+		log.Log.Info("更新 VpcNatTunnel 成功: " + vpcTunnel.Name)
 	}
-
 	return ctrl.Result{}, nil
 }
 
@@ -418,17 +408,17 @@ func (r *VpcNatTunnelReconciler) handleDelete(ctx context.Context, vpcTunnel *ku
 	if containsString(vpcTunnel.ObjectMeta.Finalizers, "tunnel.finalizer.ustc.io") {
 
 		// delete route and tunnel
-		gwpod, err := r.getNatGwPod(vpcTunnel.Status.NatGwDp)
+		gwPod, err := getNatGwPod(vpcTunnel.Status.LocalGw, r.Client)
 		if err != nil {
 			log.Log.Error(err, "Error get GwPod")
 			return ctrl.Result{}, err
 		}
-		err = r.execCommandInPod(gwpod.Name, gwpod.Namespace, "vpc-nat-gw", genDelGlobalnetRoute(vpcTunnel))
+		err = r.execCommandInPod(gwPod.Name, gwPod.Namespace, "vpc-nat-gw", genDelGlobalnetRoute(vpcTunnel))
 		if err != nil {
-			log.Log.Error(err, "Error exec genDelGlobalnetRoute in handleDelete")
+			log.Log.Error(err, "Error exec genDelGlobalNetRoute in handleDelete")
 			return ctrl.Result{}, err
 		}
-		err = r.execCommandInPod(gwpod.Name, gwpod.Namespace, "vpc-nat-gw", r.genDeleteTunnelCmd(vpcTunnel))
+		err = r.execCommandInPod(gwPod.Name, gwPod.Namespace, "vpc-nat-gw", genDeleteTunnelCmd(r.tunnelOpFact, vpcTunnel))
 		if err != nil {
 			log.Log.Error(err, "Error exec genDeleteTunnelCmd in handleDelete")
 			return ctrl.Result{}, err
@@ -440,6 +430,7 @@ func (r *VpcNatTunnelReconciler) handleDelete(ctx context.Context, vpcTunnel *ku
 			log.Log.Error(err, "Error Update vpcTunnel")
 			return ctrl.Result{}, err
 		}
+		log.Log.Info("删除 VpcNatTunnel 成功: " + vpcTunnel.Name)
 	}
 	return ctrl.Result{}, nil
 }
