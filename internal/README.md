@@ -42,9 +42,36 @@ internal code folder:
 ### gateway_informer.go
 `gateway_informer.go` 基于 k8s Informer，对 Vpc-Gateway StatefulSet 进行监视，对 StatefulSet 的行为会触发相应的操作逻辑
 
-- Vpc-Gateway StatefulSet 创建：创建（GatewayExIp 之前没有）/ 更新（GatewayExIp 之前存在） StatefulSet 下的 pod 的 GatewayExIp
-- Vpc-Gateway StatefulSet 更新：若更新操作为 Vpc-Gateway 节点重启， 更新 Vpc-Gateway 对应的 GatewayExIp 和 相关的 VpcNatTunnel 状态
-- Vpc-Gateway StatefulSet 删除：删除 Vpc-Gateway 对应的 GatewayExIp
+#### handle Gateway Add
+
+在VPC下部署一个Vpc-Nat-Gateway时会触发Informer的Add Function，分为三种情况进行处理
+
+- 当前VPC有与之对应的GatewayExIp且其指向的Gateway就是当前添加的网关，则根据当前Gateway更新GatewayExIp
+- 当前VPC有与之对应的GatewayExIp但其指向的Gateway不是当前添加的网关，说明此时VPC已经有主网关，因此不做处理
+- 当前VPC没有GatewayExIp，说明此时VPC下没有网关，则添加的网关成为主网关，创建对应的GatewayExIp
+
+#### handle Gateway Update
+
+Vpc-Nat-Gateway 宕掉或者重启时会触发Informer的Update Function，分为以下情况处理
+
+- 若是网关宕掉，判断是不是主网关宕掉，若不是则不进行处理；若是则寻找可用的备用网关，选中备用网关作为新的主网关并进行以下操作
+    - 将VPC的逻辑路由器的流量路径从之前主网关切换到当前网关
+    - 根据当前网关的信息更新VPC对应的GatewayExIp
+    - 根据与VPC相关的VpcNatTunnel在新的主网关建立隧道
+- 若是网关重启，判断是不是主网关重启，若不是则不进行处理，若是则说明VPC是单网关，因为多网关下在网关宕掉时已经将主网关进行切换，完成以下操作
+    -  根据当前网关的信息更新VPC对应的GatewayExIp
+    -  根据与VPC相关的VpcNatTunnel在重启的主网关建立隧道
+
+#### handle Gateway Delete
+
+删除VPC中的一个Vpc-Nat-Gateway时会触发Informer的Delete Function，分为以下情况处理
+
+- 判断是不是主网关宕掉，若不是则不进行处理；若是则寻找可用的备用网关，
+    - 若没有可用的备用网关，说明删除前VPC为单网关，删除后VPC没有网关，因此删除GatewayExIp
+    - 若发现可用的备用网关，完成以下操作
+        - 将VPC的逻辑路由器的流量路径从之前主网关切换到当前网关
+        - 根据当前网关的信息更新VPC对应的GatewayExIp
+        - 根据与VPC相关的VpcNatTunnel在新的主网关建立隧道
 
 ## tunnel
 
