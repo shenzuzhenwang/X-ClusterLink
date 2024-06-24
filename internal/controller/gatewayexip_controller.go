@@ -75,20 +75,17 @@ func InitEnvVars(syncerConf broker.SyncerConfig) error {
 		return err
 	}
 	utilruntime.Must(syncerConf.Scheme.Convert(obj, cr, nil))
-	err = os.Setenv("SUBMARINER_NAMESPACE", cr.Spec.Namespace)
-	err = os.Setenv("SUBMARINER_CLUSTERID", cr.Spec.ClusterID)
-	err = os.Setenv("SUBMARINER_DEBUG", strconv.FormatBool(cr.Spec.Debug))
-	err = os.Setenv("SUBMARINER_GLOBALNET_ENABLED", strconv.FormatBool(cr.Spec.GlobalnetEnabled))
-	err = os.Setenv("SUBMARINER_HALT_ON_CERT_ERROR", strconv.FormatBool(cr.Spec.HaltOnCertificateError))
-	err = os.Setenv(broker.EnvironmentVariable("ApiServer"), cr.Spec.BrokerK8sApiServer)
-	err = os.Setenv(broker.EnvironmentVariable("ApiServerToken"), cr.Spec.BrokerK8sApiServerToken)
-	err = os.Setenv(broker.EnvironmentVariable("RemoteNamespace"), cr.Spec.BrokerK8sRemoteNamespace)
-	err = os.Setenv(broker.EnvironmentVariable("CA"), cr.Spec.BrokerK8sCA)
-	err = os.Setenv(broker.EnvironmentVariable("Insecure"), strconv.FormatBool(cr.Spec.BrokerK8sInsecure))
-	err = os.Setenv(broker.EnvironmentVariable("Secret"), cr.Spec.BrokerK8sSecret)
-	if err != nil {
-		return err
-	}
+	os.Setenv("SUBMARINER_NAMESPACE", cr.Spec.Namespace)
+	os.Setenv("SUBMARINER_CLUSTERID", cr.Spec.ClusterID)
+	os.Setenv("SUBMARINER_DEBUG", strconv.FormatBool(cr.Spec.Debug))
+	os.Setenv("SUBMARINER_GLOBALNET_ENABLED", strconv.FormatBool(cr.Spec.GlobalnetEnabled))
+	os.Setenv("SUBMARINER_HALT_ON_CERT_ERROR", strconv.FormatBool(cr.Spec.HaltOnCertificateError))
+	os.Setenv(broker.EnvironmentVariable("ApiServer"), cr.Spec.BrokerK8sApiServer)
+	os.Setenv(broker.EnvironmentVariable("ApiServerToken"), cr.Spec.BrokerK8sApiServerToken)
+	os.Setenv(broker.EnvironmentVariable("RemoteNamespace"), cr.Spec.BrokerK8sRemoteNamespace)
+	os.Setenv(broker.EnvironmentVariable("CA"), cr.Spec.BrokerK8sCA)
+	os.Setenv(broker.EnvironmentVariable("Insecure"), strconv.FormatBool(cr.Spec.BrokerK8sInsecure))
+	os.Setenv(broker.EnvironmentVariable("Secret"), cr.Spec.BrokerK8sSecret)
 	return nil
 }
 
